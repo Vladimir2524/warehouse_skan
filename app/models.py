@@ -20,16 +20,15 @@ class Item(Base):
     id = Column(Integer, primary_key=True, index=True)
     shipment_id = Column(Integer, ForeignKey("shipments.id"), nullable=False)
 
-    sticker_code = Column(String, index=True, nullable=False)  # *DL9UXtOS (сканируем его)
-    barcode = Column(String, nullable=True)  # ШК
-    box_number = Column(String, index=True, nullable=False)  # Номер коробки
-    title = Column(String, nullable=True)  # Наименование
+    sticker_code = Column(String, index=True, nullable=False)
+    barcode = Column(String, nullable=True)
+    box_number = Column(String, index=True, nullable=False)
+    title = Column(String, nullable=True)
 
-    # Тип товара/изъятия: 'NONE', 'SEIZURE', 'SEIZURE_PD'
     seizure_type = Column(String, default='NONE', index=True)
 
-    # Статус сканирования
     is_scanned = Column(Boolean, default=False)
     scanned_at = Column(DateTime, nullable=True)
+    scanned_by_desk = Column(String, nullable=True)  # <-- ВОТ ЭТА СТРОКА!
 
     shipment = relationship("Shipment", back_populates="items")

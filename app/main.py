@@ -1,6 +1,8 @@
 import os
 import shutil
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Request
+from fastapi.responses import HTMLResponse, StreamingResponse
+from app.services.reports import generate_excel_report
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
@@ -61,3 +63,16 @@ def upload_shipment(file: UploadFile = File(...), db: Session = Depends(get_db))
 @app.post("/api/scan", response_model=ScanResponse)
 def scan_code(req: ScanRequest, db: Session = Depends(get_db)):
     return process_scan(db, req)
+
+
+# Эндпоинт скачивания отчета Excel
+@app.get("/api/shipments/{shipment_id}/report")
+def download_report(shipment_id: int, db: Session = Depends(get_db)):
+    excel_bytes = generate_excel_report(db, shipment_id)
+    filename = f"Report_Shipment_{shipment_id}.xlsx"
+
+    return StreamingResponse(
+        excel_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )

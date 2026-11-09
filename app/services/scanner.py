@@ -81,9 +81,13 @@ def process_scan(db: Session, req: ScanRequest) -> ScanResponse:
         s_phrase = f"В коробке {b_scanned} место"
         status = "OK"
 
+    # Считаем общие цифры по всей партии (shipment)
+    shipment_total = db.query(Item).filter(Item.shipment_id == req.shipment_id).count()
+    shipment_scanned = db.query(Item).filter(Item.shipment_id == req.shipment_id, Item.is_scanned == True).count()
+
     return ScanResponse(
         status=status,
-        message="Успешно отсканировано",
+        message="Успешно",
         sound_file=s_file,
         sound_phrase=s_phrase,
         title=item.title,
@@ -91,5 +95,9 @@ def process_scan(db: Session, req: ScanRequest) -> ScanResponse:
         box_total=b_total,
         box_scanned=b_scanned,
         box_seizures_total=b_seizures,
-        box_seizures_found=b_seizures_found
+        box_seizures_found=b_seizures_found,
+        # Передаем общие цифры
+        shipment_total=shipment_total,
+        shipment_scanned=shipment_scanned
     )
+
