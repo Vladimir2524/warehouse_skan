@@ -1,13 +1,19 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
 
-# Наша бд, распакуем сначало sqlite потом ток PostgreSQL
 DATABASE_URL = "sqlite:///./warehouse.db"
 
 engine = create_engine(
     DATABASE_URL,
-    connect_args={"check_same_thread": False} # только для sqlite
+    connect_args={
+        "check_same_thread": False,
+        "timeout": 30  # Добавляем ТАЙМАУТ 30 секунд
+    }
 )
+
+# Включаем WAL-режим для ускорения и параллельности
+with engine.connect() as conn:
+    conn.exec_driver_sql("PRAGMA journal_mode=WAL")
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 

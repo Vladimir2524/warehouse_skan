@@ -131,16 +131,25 @@
         formData.append('file', fileInput.files[0]);
 
         try {
-            const res = await fetch('/api/shipments/upload', { method: 'POST', body: formData });
+            const res = await fetch('/api/shipments/upload', {
+                method: 'POST',
+                body: formData
+            });
+
             const data = await res.json();
+
             if (res.ok) {
-                alert(`Файл загружен! ID отгрузки: ${data.shipment_id}`);
+                // Только если статус 200-299
+                alert(`Успех! Файл загружен. Номер отгрузки: ${data.shipment_id}`);
                 document.getElementById('shipment-id').value = data.shipment_id;
                 document.getElementById('file-name-display').innerText = data.filename;
             } else {
-                alert(`Ошибка: ${data.detail}`);
+                // Если сервер вернул 400, 500 и т.д.
+                alert(`ОШИБКА: ${data.detail || 'Не удалось загрузить файл'}`);
             }
-        } catch (err) { alert('Ошибка загрузки'); }
+        } catch (err) {
+            alert('Сетевая ошибка или сервер недоступен');
+        }
     });
 
     // Сканирование
