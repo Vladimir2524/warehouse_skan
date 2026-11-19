@@ -1,24 +1,30 @@
 from pydantic import BaseModel
 from typing import Optional
 
+
 class ScanRequest(BaseModel):
     code: str
-    desk_id: str = "PC1"
+    desk_id: Optional[str] = "PC1"
+
 
 class ScanResponse(BaseModel):
     status: str
-    message: str
-    sound_file: str
+    sound: Optional[str] = None
     sound_phrase: Optional[str] = None
-    title: Optional[str] = None
+    banner_text: Optional[str] = ""
+    banner_color: Optional[str] = "secondary"
+
+    # Информация по коробке и товару
     box_number: Optional[str] = None
-    box_total: int = 0
-    box_scanned: int = 0
-    box_seizures_total: int = 0
-    box_seizures_found: int = 0
-    box_place_text: Optional[str] = None
-    shipment_total: int = 0
-    shipment_scanned: int = 0
-    shipment_seizures_total: int = 0
-    shipment_seizures_found: int = 0
-    shipment_name: Optional[str] = None
+    box_scanned: Optional[int] = 0
+    box_total: Optional[int] = 0
+    box_places_left: Optional[int] = 0
+    item_title: Optional[str] = None
+    sticker: Optional[str] = None
+
+    # Поля для обратной совместимости
+    message: Optional[str] = None
+    sound_file: Optional[str] = None
+
+    class Config:
+        from_attributes = True

@@ -2,259 +2,298 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WarehouseScanner - Склад</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
-        body { font-family: 'Segoe UI', Arial, sans-serif; margin: 0; padding: 20px; background-color: #f8f9fa; color: #212529; }
-        .container { max-width: 1100px; margin: 0 auto; }
-
-        .upload-card { background: #fff; padding: 12px 20px; border-radius: 8px; border: 1px solid #dee2e6; margin-bottom: 15px; display: flex; align-items: center; justify-content: space-between; }
-        .upload-card form { display: flex; gap: 10px; align-items: center; }
-
-        /* Шапка со статистикой */
-        .header-stats { text-align: center; margin-bottom: 15px; }
-        .shipment-title { font-size: 16px; color: #6c757d; margin-bottom: 8px; font-weight: bold; }
-        .main-metrics { display: flex; justify-content: center; gap: 30px; }
-        .metric-item { text-align: center; background: #fff; padding: 10px 25px; border-radius: 8px; border: 1px solid #dee2e6; min-width: 140px; }
-        .metric-val { font-size: 40px; font-weight: 800; color: #000; line-height: 1.1; }
-        .metric-label { font-size: 12px; color: #8d959e; text-transform: uppercase; font-weight: bold; margin-top: 4px; }
-
-        .scan-card { background: #fff; padding: 12px; border-radius: 8px; border: 2px solid #ffc107; margin-bottom: 15px; }
-        #scan-input { width: 100%; padding: 10px; font-size: 26px; border: none; outline: none; box-sizing: border-box; }
-
-        /* Статусы */
-        .status-box { padding: 15px; text-align: center; font-size: 32px; font-weight: bold; border-radius: 6px; color: #fff; margin-bottom: 15px; display: none; }
-        .status-SEIZURE, .status-SEIZURE_PD, .status-REPEAT_SEIZURE { background-color: #dc3545; }
-        .status-OK { background-color: #198754; }
-        .status-BOX_COMPLETE { background-color: #0d6efd; }
-        .status-REPEAT { background-color: #fd7e14; }
-        .status-NOT_IN_DB, .status-INVALID { background-color: #6c757d; }
-
-        /* Таблица сканов */
-        .history-card { background: #fff; padding: 15px; border-radius: 8px; border: 1px solid #dee2e6; }
-        .history-title { font-size: 13px; font-weight: bold; color: #8d959e; text-transform: uppercase; margin-bottom: 10px; }
-
-        .history-table { width: 100%; border-collapse: collapse; }
-        .history-table th { text-align: left; padding: 8px; font-size: 13px; color: #6c757d; border-bottom: 2px solid #dee2e6; }
-        .history-table td { padding: 10px 8px; font-size: 15px; border-bottom: 1px solid #f1f3f5; }
-
-        .badge-NOT_IN_DB, .badge-INVALID { color: #6c757d; font-weight: bold; }
-        .badge-REPEAT { color: #fd7e14; font-weight: bold; }
-        .badge-REPEAT_SEIZURE, .badge-SEIZURE, .badge-SEIZURE_PD { color: #dc3545; font-weight: bold; }
-        .badge-OK { color: #198754; font-weight: bold; }
-        .badge-BOX_COMPLETE { color: #0d6efd; font-weight: bold; }
+        body { background-color: #f4f6f9; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        .active-file-banner {
+            background-color: #e9ecef; border: 1px solid #ced4da;
+            padding: 8px 16px; border-radius: 6px; font-weight: bold;
+            color: #495057; display: flex; justify-content: space-between;
+            align-items: center; margin-bottom: 12px;
+        }
+        .metric-card {
+            background: white; border-radius: 8px;
+            padding: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            text-align: center; border-left: 5px solid #0d6efd;
+        }
+        .metric-card-danger { border-left-color: #dc3545; }
+        .metric-card-warning { border-left-color: #ffc107; }
+        .metric-card-success { border-left-color: #198754; }
+        .metric-value { font-size: 2.8rem; font-weight: 800; line-height: 1.1; }
+        .metric-label { font-size: 0.85rem; font-weight: 700; color: #6c757d; text-transform: uppercase; margin-top: 5px; }
+        .scan-card {
+            background: white; border-radius: 10px;
+            padding: 25px; box-shadow: 0 4px 6px rgba(0,0,0,0.08);
+            border-top: 4px solid #ffc107;
+        }
+        .scan-input {
+            font-size: 1.8rem; height: 65px;
+            text-align: center; font-weight: bold;
+            letter-spacing: 2px;
+        }
+        .banner-box {
+            font-size: 1.6rem; font-weight: bold;
+            padding: 16px; border-radius: 8px;
+            text-align: center; margin-top: 15px; display: none;
+        }
+        .history-table th { background: #e9ecef; }
+        /* Индикатор перетаскивания файлов */
+        #dropOverlay {
+            display: none; position: fixed; top: 0; left: 0;
+            width: 100vw; height: 100vh; background: rgba(13, 110, 253, 0.2);
+            border: 4px dashed #0d6efd; z-index: 9999;
+            align-items: center; justify-content: center;
+            font-size: 2rem; font-weight: bold; color: #0d6efd;
+        }
     </style>
 </head>
-<body>
+<body class="p-3">
 
-<div class="container">
+<div id="dropOverlay">ПЕРЕТАЩИТЕ EXCEL ФАЙЛ СЮДА ДЛЯ ЗАГРУЗКИ</div>
 
-    <div class="upload-card">
-        <form id="upload-form">
-            <b>Партия:</b>
-            <input type="file" id="excel-file" accept=".xlsx, .xls" required>
-            <button type="submit" style="padding: 5px 12px; background: #198754; color: #fff; border: none; border-radius: 4px; cursor: pointer;">Загрузить</button>
-        </form>
+<div class="container-fluid">
+    <!-- Шапка активного файла -->
+    <div class="active-file-banner">
+        <div>📁 Активный файл: <span id="activeFileName" class="text-primary">Файл не выбран</span></div>
         <div>
-            <b>ID:</b>
-            <input type="number" id="shipment-id" value="1" style="width: 50px; font-size: 16px; text-align: center;">
-            <button onclick="downloadReport()" style="padding: 5px 12px; background: #0d6efd; color: #fff; border: none; border-radius: 4px; cursor: pointer;">📊 Скачать отчет</button>
+            <input type="file" id="excelFileInput" style="display: none;" accept=".xlsx, .xls">
+            <button class="btn btn-sm btn-outline-primary me-2" onclick="document.getElementById('excelFileInput').click()">Загрузить Excel</button>
+            <a href="/api/shipments/last/report" class="btn btn-sm btn-outline-success">Скачать отчет</a>
         </div>
     </div>
 
-    <!-- Метрики в шапке -->
-    <div class="header-stats">
-        <div class="shipment-title" id="file-name-display">Реестр не выбран</div>
-        <div class="main-metrics">
-            <div class="metric-item">
-                <div class="metric-val"><span id="scanned-count">0</span> / <span id="total-count">0</span></div>
-                <div class="metric-label">Всего товаров</div>
+    <!-- ВЕРХНИЙ БЛОК: ИЗЪЯТИЯ -->
+    <div class="row g-3 mb-2">
+        <div class="col-md-6">
+            <div class="metric-card metric-card-warning">
+                <div class="metric-value text-dark" id="totalSeizures">0</div>
+                <div class="metric-label">СКОЛЬКО ВСЕГО ИЗЪЯТИЙ В ФАЙЛЕ</div>
             </div>
-            <div class="metric-item" style="border-color: #dc3545;">
-                <div class="metric-val" style="color: #dc3545;"><span id="seiz-found">0</span> / <span id="seiz-total">0</span></div>
-                <div class="metric-label">Изъятий найдено</div>
-            </div>
-            <div class="metric-item">
-                <div class="metric-val" id="total-clicks">0</div>
-                <div class="metric-label">Пикнули всего</div>
+        </div>
+        <div class="col-md-6">
+            <div class="metric-card metric-card-danger">
+                <div class="metric-value text-danger" id="scannedSeizures">0</div>
+                <div class="metric-label">ИЗЪЯТИЙ ПИКНУЛИ (СЕЙЧАС)</div>
             </div>
         </div>
     </div>
 
-    <div class="scan-card">
-        <input type="text" id="scan-input" placeholder="Сканируйте штрихкод..." autofocus autocomplete="off">
+    <!-- ВТОРОЙ БЛОК: ОБЩЕЕ КОЛИЧЕСТВО ТОВАРОВ -->
+    <div class="row g-3 mb-3">
+        <div class="col-md-6">
+            <div class="metric-card">
+                <div class="metric-value text-primary" id="totalItems">0</div>
+                <div class="metric-label">СКОЛЬКО ВСЕГО ТОВАРОВ В ФАЙЛЕ</div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="metric-card metric-card-success">
+                <div class="metric-value text-success" id="scannedItems">0</div>
+                <div class="metric-label">ОТСКАНИРОВАНО ТОВАРОВ</div>
+            </div>
+        </div>
     </div>
 
-    <div id="status-box" class="status-box"></div>
-
-    <div class="history-card">
-        <div class="history-title">Последние сканы</div>
-        <table class="history-table">
-            <thead>
-                <tr>
-                    <th>Результат</th>
-                    <th>Штрихкод</th>
-                    <th>Коробка (место)</th>
-                    <th>Наименование товара</th>
-                </tr>
-            </thead>
-            <tbody id="history-body"></tbody>
-        </table>
+    <!-- КАРТОЧКА СКАНИРОВАНИЯ -->
+    <div class="scan-card mb-4">
+        <form id="scanForm" onsubmit="handleScan(event)">
+            <input type="text" id="barcodeInput" class="form-control scan-input" placeholder="ОТСКАНИРУЙТЕ ШТРИХКОД..." autocomplete="off">
+        </form>
+        <div id="bannerBox" class="banner-box"></div>
     </div>
 
+    <!-- ТАБЛИЦА СКАНИРОВАНИЙ -->
+    <div class="card">
+        <div class="card-header fw-bold bg-white">Последние сканирования</div>
+        <div class="card-body p-0">
+            <table class="table table-striped mb-0 history-table">
+                <thead>
+                    <tr>
+                        <th style="width: 15%;">Время</th>
+                        <th style="width: 30%;">Штрихкод</th>
+                        <th style="width: 25%;">Статус</th>
+                        <th style="width: 30%;">Товар</th>
+                    </tr>
+                </thead>
+                <tbody id="historyBody"></tbody>
+            </table>
+        </div>
+    </div>
 </div>
 
 <script>
-    const scanInput = document.getElementById('scan-input');
-    const statusBox = document.getElementById('status-box');
-    const historyBody = document.getElementById('history-body');
-    const uploadForm = document.getElementById('upload-form');
+    const input = document.getElementById('barcodeInput');
+    const banner = document.getElementById('bannerBox');
+    const overlay = document.getElementById('dropOverlay');
 
-    let clicks = 0;
-    let audioCtx = null;
-
-    function getAudioContext() {
-        if (!audioCtx) {
-            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        }
-        if (audioCtx.state === 'suspended') {
-            audioCtx.resume();
-        }
-        return audioCtx;
-    }
-
-    async function playSound(filename) {
-        if (!filename) return;
-        try {
-            const ctx = getAudioContext();
-            const res = await fetch(`/static/sounds/${filename}`);
-            if (!res.ok) return;
-            const buf = await res.arrayBuffer();
-            const audioBuf = await ctx.decodeAudioData(buf);
-
-            const src = ctx.createBufferSource();
-            src.buffer = audioBuf;
-
-            const gainNode = ctx.createGain();
-            gainNode.gain.value = 2.5; // Усиление громкости
-
-            src.connect(gainNode);
-            gainNode.connect(ctx.destination);
-            src.start(0);
-        } catch (e) {
-            console.error("Ошибка звука:", e);
-        }
-    }
-
-    scanInput.addEventListener('keydown', async (e) => {
-        if (e.key === 'Enter') {
-            e.preventDefault();
-            const code = scanInput.value.trim();
-            if (!code) return;
-
-            getAudioContext();
-            clicks++;
-            document.getElementById('total-clicks').innerText = clicks;
-
-            await sendScan(code);
-            scanInput.value = '';
-        }
+    // Фокус на инпут
+    document.addEventListener('click', () => { input.focus(); });
+    window.addEventListener('load', () => {
+        input.focus();
+        loadCurrentState();
     });
 
-    async function sendScan(code) {
+    // Аудио контекст Web Audio API
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    function playMp3(soundName) {
+        if (!soundName) return;
+        fetch(`/static/sounds/${soundName}.mp3`)
+            .then(res => res.arrayBuffer())
+            .then(data => audioCtx.decodeAudioData(data))
+            .then(buffer => {
+                const src = audioCtx.createBufferSource();
+                const gain = audioCtx.createGain();
+                gain.gain.value = 2.5;
+                src.buffer = buffer;
+                src.connect(gain);
+                gain.connect(audioCtx.destination);
+                src.start(0);
+            }).catch(e => console.log('Звук не найден:', soundName));
+    }
+
+    // Речь ТОЛЬКО для мест коробки и «Коробка полная!»
+    function speakText(phrase) {
+        if (!phrase) return;
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(phrase);
+        utterance.lang = 'ru-RU';
+        utterance.rate = 1.05;
+        window.speechSynthesis.speak(utterance);
+    }
+
+    // Восстановление состояния при старте / F5
+    async function loadCurrentState() {
+        try {
+            const res = await fetch('/api/shipments/current');
+            const data = await res.json();
+            if (data.has_active) {
+                document.getElementById('activeFileName').innerText = data.filename;
+                document.getElementById('totalItems').innerText = data.total_items;
+                document.getElementById('scannedItems').innerText = data.scanned_items;
+                document.getElementById('totalSeizures').innerText = data.total_seizures;
+                document.getElementById('scannedSeizures').innerText = data.scanned_seizures;
+
+                if (data.history && data.history.length > 0) {
+                    const tbody = document.getElementById('historyBody');
+                    tbody.innerHTML = '';
+                    data.history.forEach(item => {
+                        const tr = document.createElement('tr');
+                        let badgeClass = 'bg-secondary';
+                        if (item.status === 'SCANNED' || item.status === 'OK' || item.status === 'BOX_COMPLETE') badgeClass = 'bg-success';
+                        if (item.status === 'SEIZURE' || item.status === 'INVALID' || item.status === 'NOT_IN_DB') badgeClass = 'bg-danger';
+                        if (item.status === 'REPEAT') badgeClass = 'bg-warning text-dark';
+
+                        tr.innerHTML = `<td>${item.time}</td><td>${item.code}</td><td><span class="badge ${badgeClass}">${item.status}</span></td><td>-</td>`;
+                        tbody.appendChild(tr);
+                    });
+                }
+            }
+        } catch(e) {
+            console.error('Ошибка загрузки данных:', e);
+        }
+    }
+
+    // Отправка скана
+    async function handleScan(e) {
+        e.preventDefault();
+        const code = input.value.trim();
+        if (!code) return;
+        input.value = '';
+
         try {
             const res = await fetch('/api/scan', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ code: code, desk_id: 'PC1' })
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ code: code, desk_id: "PC1" })
             });
+            const data = await res.json();
 
-            if (!res.ok) {
-                console.error("Ошибка от сервера:", res.status);
-                return;
+            banner.style.display = 'block';
+            banner.className = `banner-box bg-${data.banner_color} text-white`;
+            banner.innerText = data.banner_text;
+
+            if (data.sound) playMp3(data.sound);
+            if (data.sound_phrase) {
+                setTimeout(() => speakText(data.sound_phrase), 350);
             }
 
-            const data = await res.json();
-            renderScan(data, code);
-            playSound(data.sound_file);
-        } catch (err) {
-            console.error("Ошибка отправки:", err);
+            if (data.status === 'OK' || data.status === 'BOX_COMPLETE') {
+                const sItems = document.getElementById('scannedItems');
+                sItems.innerText = parseInt(sItems.innerText || '0') + 1;
+            } else if (data.status === 'SEIZURE') {
+                const sItems = document.getElementById('scannedItems');
+                const sSeiz = document.getElementById('scannedSeizures');
+                sItems.innerText = parseInt(sItems.innerText || '0') + 1;
+                sSeiz.innerText = parseInt(sSeiz.innerText || '0') + 1;
+            }
+
+            addRowToHistory(code, data.status, data.item_title || '');
+
+        } catch(err) {
+            console.error(err);
         }
     }
 
-    function renderScan(data, code) {
-        // Плашка статуса
-        statusBox.style.display = 'block';
-        statusBox.className = 'status-box status-' + data.status;
-        statusBox.innerText = data.message;
+    function addRowToHistory(code, status, title) {
+        const tbody = document.getElementById('historyBody');
+        const tr = document.createElement('tr');
+        const now = new Date().toLocaleTimeString();
 
-        // Метрики
-        if (data.shipment_name) {
-            document.getElementById('file-name-display').innerText = "Партия: " + data.shipment_name;
-        }
-        document.getElementById('scanned-count').innerText = data.shipment_scanned || 0;
-        document.getElementById('total-count').innerText = data.shipment_total || 0;
-        document.getElementById('seiz-found').innerText = data.shipment_seizures_found || 0;
-        document.getElementById('seiz-total').innerText = data.shipment_seizures_total || 0;
+        let badgeClass = 'bg-secondary';
+        if (status === 'OK' || status === 'BOX_COMPLETE' || status === 'SCANNED') badgeClass = 'bg-success';
+        if (status === 'SEIZURE' || status === 'INVALID' || status === 'NOT_IN_DB' || status === 'REPEAT_SEIZURE') badgeClass = 'bg-danger';
+        if (status === 'REPEAT') badgeClass = 'bg-warning text-dark';
 
-        // Коробка
-        let boxText = data.box_number || '-';
-        if (data.box_place_text) {
-            boxText += ` (${data.box_place_text})`;
-        }
-
-        // История (вставляем в самое начало)
-        const row = historyBody.insertRow(0);
-        row.innerHTML = `
-            <td><span class="badge-${data.status}">${data.message}</span></td>
-            <td><strong>${code}</strong></td>
-            <td>${boxText}</td>
-            <td>${data.title || '-'}</td>
-        `;
+        tr.innerHTML = `<td>${now}</td><td>${code}</td><td><span class="badge ${badgeClass}">${status}</span></td><td>${title}</td>`;
+        tbody.insertBefore(tr, tbody.firstChild);
+        if (tbody.children.length > 15) tbody.removeChild(tbody.lastChild);
     }
 
-    // Загрузка файла
-    uploadForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const fileInput = document.getElementById('excel-file');
-        if (!fileInput.files[0]) return alert("Выберите файл!");
-
-        const form = new FormData();
-        form.append("file", fileInput.files[0]);
+    // ФУНКЦИЯ ЗАГРУЗКИ ФАЙЛА
+    async function uploadExcelFile(file) {
+        if (!file) return;
+        const formData = new FormData();
+        formData.append('file', file);
 
         try {
-            const res = await fetch("/api/shipments/upload", { method: "POST", body: form });
-            if (res.ok) {
-                const resData = await res.json();
-                alert("Файл успешно загружен!");
-                if (resData.shipment_id) {
-                    document.getElementById('shipment-id').value = resData.shipment_id;
-                }
-                location.reload();
-            } else {
-                const err = await res.json();
-                alert("Ошибка: " + (err.detail || "Не удалось загрузить"));
+            const res = await fetch('/api/shipments/upload', { method: 'POST', body: formData });
+            const data = await res.json();
+            if (data.status === 'success') {
+                loadCurrentState();
+                alert(`Файл успешно загружен!\nВсего строк: ${data.total_rows}\nИзъятий: ${data.seizures_count}`);
             }
-        } catch (e) {
-            alert("Ошибка связи с сервером");
-        }
-    });
-
-    // Скачивание отчета
-    function downloadReport() {
-        const id = document.getElementById('shipment-id').value;
-        if (id) {
-            window.location.href = `/api/shipments/${id}/report`;
-        } else {
-            window.location.href = `/api/shipments/last/report`;
+        } catch (err) {
+            alert('Ошибка при загрузке файла');
         }
     }
 
-    // Автофокус на поле ввода при клике в любое место
-    document.addEventListener('click', () => {
-        getAudioContext();
-        scanInput.focus();
+    // Выбор файла через кнопку
+    document.getElementById('excelFileInput').addEventListener('change', (e) => {
+        uploadExcelFile(e.target.files[0]);
+    });
+
+    // DRAG AND DROP (Перетаскивание файла мышкой на страницу)
+    window.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        overlay.style.display = 'flex';
+    });
+
+    overlay.addEventListener('dragleave', (e) => {
+        e.preventDefault();
+        overlay.style.display = 'none';
+    });
+
+    overlay.addEventListener('drop', (e) => {
+        e.preventDefault();
+        overlay.style.display = 'none';
+        if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+            uploadExcelFile(e.dataTransfer.files[0]);
+        }
     });
 </script>
+
 </body>
 </html>
 

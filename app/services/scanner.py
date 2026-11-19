@@ -1,119 +1,185 @@
-import datetime
+from datetime import datetime
 from sqlalchemy.orm import Session
-from sqlalchemy import func
-from app import models
+from app.models import Item, ScanLog, Shipment
 from app.schemas import ScanResponse
 
-
-class Status:
-    OK = "OK"
-    INVALID = "INVALID"
-    NOT_IN_DB = "NOT_IN_DB"
-    REPEAT = "REPEAT"
-    REPEAT_SEIZURE = "REPEAT_SEIZURE"
-    SEIZURE = "SEIZURE"
-    SEIZURE_PD = "SEIZURE_PD"
-    BOX_COMPLETE = "BOX_COMPLETE"
-
-
 def process_scan(db: Session, code: str, desk_id: str = "PC1") -> ScanResponse:
-    # 1. Валидация формата (должен начинаться со звездочки и быть не короче 8 символов)
-    if not code.startswith('*') or len(code) < 8:
+    cleaned = code.strip()
+
+    # 1. Проверка формата: начинается с * и длина >= 8
+    if not cleaned.startswith("*") or len(cleaned) < 8:
         return ScanResponse(
-            status=Status.INVALID,
-            message=f"НЕ ТОТ ШТРИХКОД: {code}",
-            sound_file="invalid.mp3",
-            sound_phrase="Не тот штрихкод"
+            status="INVALID",
+            sound="invalid",
+            sound_phrase=None,
+            banner_text="НЕ ТОТ ШТРИХКОД",
+            banner_color="danger"
         )
 
+    # 2. Ищем товар в активной партии
+    active_shipment = db.query(Shipment).order_by(Shipment.id.desc()).first()
+    shipment_id = active_shipment.id if active_shipment else 1
 
-    # 2. Поиск товара в базе
-    item = db.query(models.Item).filter(models.Item.sticker_code == code).first()
+    item = db.query(Item).filter(
+        Item.shipment_id == shipment_id,
+        Item.sticker == cleaned
+    ).first()
+
+    # Если по текущей партии не найден, ищем в любой последней
     if not item:
+        item = db.query(Item).filter(Item.sticker == cleaned).order_by(Item.id.desc()).first()
+        if item:
+            shipment_id = item.shipment_id
+
+    # 3. Товара нет в базе
+    if not item:
+        log = ScanLog(
+            shipment_id=shipment_id,
+            scanned_code=cleaned,
+            status="NOT_IN_DB",
+            desk_id=desk_id
+        )
+        db.add(log)
+        db.commit()
         return ScanResponse(
-            status=Status.NOT_IN_DB,
-            message=f"НЕТ В БАЗЕ: {code}",
-            sound_file="not_in_db.mp3",
-            sound_phrase="Нет в базе"
+            status="NOT_IN_DB",
+            sound="not_in_db",
+            sound_phrase=None,
+            banner_text="НЕТ В БАЗЕ",
+            banner_color="danger"
         )
 
-    # Инфо о партии для шапки
-    shipment = db.query(models.Shipment).filter(models.Shipment.id == item.shipment_id).first()
-    shipment_name = shipment.filename if shipment else "Неизвестная партия"
+    box_num = item.box_number
 
-    # Считаем актуальную статистику по партии
-    shipment_total = db.query(func.count(models.Item.id)).filter(models.Item.shipment_id == item.shipment_id).scalar()
-    shipment_scanned = db.query(func.count(models.Item.id)).filter(models.Item.shipment_id == item.shipment_id,
-                                                                   models.Item.is_scanned == True).scalar()
-    s_total = db.query(func.count(models.Item.id)).filter(models.Item.shipment_id == item.shipment_id,
-                                                          models.Item.seizure_type != 'NONE').scalar()
-    s_found = db.query(func.count(models.Item.id)).filter(models.Item.shipment_id == item.shipment_id,
-                                                          models.Item.seizure_type != 'NONE',
-                                                          models.Item.is_scanned == True).scalar()
+    # 4. Проверяем состояние коробки
+    box_total = db.query(Item).filter(
+        Item.shipment_id == shipment_id,
+        Item.box_number == box_num
+    ).count()
 
+    # 5. Обработка ПОВТОРНОГО сканирования
     if item.is_scanned:
-        if item.seizure_type != 'NONE':
-            status = Status.REPEAT_SEIZURE
-            sound = "repeat_seizure.mp3"
-            msg = f"ПОВТОР: ИЗЪЯТИЕ! №кор: {item.box_number}"
-        else:
-            status = Status.REPEAT
-            sound = "repeat.mp3"
-            msg = f"УЖЕ СКАНИРОВАЛИ №кор: {item.box_number}"
+        box_scanned = db.query(Item).filter(
+            Item.shipment_id == shipment_id,
+            Item.box_number == box_num,
+            Item.is_scanned == True
+        ).count()
 
-    # 4. Первый скан: сохраняем факт сканирования
+        # ЕСЛИ КОРОБКА УЖЕ ПОЛНАЯ — повторяем "Коробка полная!"
+        if box_scanned >= box_total and box_total > 0:
+            return ScanResponse(
+                status="BOX_COMPLETE",
+                sound="box_complete",
+                sound_phrase="Коробка полная!",
+                banner_text=f"КОРОБКА ПОЛНАЯ №кор: {box_num} ({box_scanned} из {box_total})",
+                banner_color="success",
+                box_number=box_num,
+                box_scanned=box_scanned,
+                box_total=box_total,
+                box_places_left=0,
+                item_title=item.title,
+                sticker=item.sticker
+            )
+
+        # Если это повтор изъятия — играем специальный звук repeat_seizure!
+        if item.seizure_type in ["SEIZURE", "SEIZURE_PD"]:
+            return ScanResponse(
+                status="REPEAT_SEIZURE",
+                sound="repeat_seizure",
+                sound_phrase=None,
+                banner_text=f"ПОВТОР: ИЗЪЯТИЕ №кор: {box_num}",
+                banner_color="danger",
+                box_number=box_num,
+                item_title=item.title,
+                sticker=item.sticker
+            )
+
+        # Обычный повтор
+        return ScanResponse(
+            status="REPEAT",
+            sound="repeat",
+            sound_phrase=None,
+            banner_text=f"ПОВТОР: ТОВАР УЖЕ БЫЛ №кор: {box_num}",
+            banner_color="warning",
+            box_number=box_num,
+            box_scanned=box_scanned,
+            box_total=box_total,
+            box_places_left=max(0, box_total - box_scanned),
+            item_title=item.title,
+            sticker=item.sticker
+        )
+
+    # 6. ПЕРВОЕ УСПЕШНОЕ СКАНИРОВАНИЕ — фиксируем дату и рабочее место!
     item.is_scanned = True
-    item.scanned_at = datetime.datetime.now()
-    item.scanned_by_desk = desk_id
+    item.scanned_at = datetime.utcnow()
+    item.desk_id = desk_id
+
+    log = ScanLog(
+        shipment_id=shipment_id,
+        item_id=item.id,
+        scanned_code=cleaned,
+        status="SCANNED",
+        desk_id=desk_id
+    )
+    db.add(log)
     db.commit()
 
-    # Обновляем счетчик отсканированных после коммита
-    shipment_scanned += 1
-    if item.seizure_type != 'NONE':
-        s_found += 1
+    # Считаем коробку после обновления
+    box_scanned = db.query(Item).filter(
+        Item.shipment_id == shipment_id,
+        Item.box_number == box_num,
+        Item.is_scanned == True
+    ).count()
 
-    # 5. Статистика по коробке
-    b_total = db.query(func.count(models.Item.id)).filter(
-        models.Item.shipment_id == item.shipment_id,
-        models.Item.box_number == item.box_number
-    ).scalar()
+    places_left = max(0, box_total - box_scanned)
 
-    b_scanned = db.query(func.count(models.Item.id)).filter(
-        models.Item.shipment_id == item.shipment_id,
-        models.Item.box_number == item.box_number,
-        models.Item.is_scanned == True
-    ).scalar()
+    # 7. Если это ИЗЪЯТИЕ
+    if item.seizure_type in ["SEIZURE", "SEIZURE_PD"]:
+        snd = "seizure_pd" if item.seizure_type == "SEIZURE_PD" else "seizure"
+        return ScanResponse(
+            status="SEIZURE",
+            sound=snd,
+            sound_phrase=None,
+            banner_text=f"ИЗЪЯТИЕ №кор: {box_num} ({box_scanned} из {box_total})",
+            banner_color="danger",
+            box_number=box_num,
+            box_scanned=box_scanned,
+            box_total=box_total,
+            box_places_left=places_left,
+            item_title=item.title,
+            sticker=item.sticker
+        )
 
-    # 6. Определение звука и статуса
-    place_text = f"{b_scanned} из {b_total}"
+    # 8. Если коробка заполнилась
+    if box_scanned >= box_total and box_total > 0:
+        return ScanResponse(
+            status="BOX_COMPLETE",
+            sound="box_complete",
+            sound_phrase="Коробка полная!",
+            banner_text=f"КОРОБКА ПОЛНАЯ №кор: {box_num} ({box_scanned} из {box_total})",
+            banner_color="success",
+            box_number=box_num,
+            box_scanned=box_scanned,
+            box_total=box_total,
+            box_places_left=0,
+            item_title=item.title,
+            sticker=item.sticker
+        )
 
-    if item.seizure_type in ['SEIZURE', 'SEIZURE_PD']:
-        status = Status.SEIZURE_PD if item.seizure_type == 'SEIZURE_PD' else Status.SEIZURE
-        sound = "seizure_pd.mp3" if item.seizure_type == 'SEIZURE_PD' else "seizure.mp3"
-        msg = f"ИЗЪЯТИЕ №кор: {item.box_number}"
-    elif b_scanned == b_total:
-        status = Status.BOX_COMPLETE
-        sound = "ok.mp3"
-        msg = f"КОРОБКА ПОЛНАЯ №кор: {item.box_number} ({place_text})"
-    else:
-        status = Status.OK
-        sound = "ok.mp3"
-        msg = f"ОК №кор: {item.box_number} ({place_text})"
+    # 9. Обычный чистый товар (озвучка оставшихся мест)
+    phrase = f"В коробке {places_left} место" if places_left == 1 else (
+             f"В коробке {places_left} места" if 1 < places_left < 5 else f"В коробке {places_left} мест")
 
     return ScanResponse(
-        status=status,
-        message=msg,
-        sound_file=sound,
-        sound_phrase=f"В коробке {b_scanned} место",
-        title=item.title,
-        box_number=item.box_number,
-        box_total=b_total,
-        box_scanned=b_scanned,
-        box_place_text=place_text,
-        shipment_total=shipment_total,
-        shipment_scanned=shipment_scanned,
-        shipment_seizures_total=s_total,
-        shipment_seizures_found=s_found,
-        shipment_name=shipment_name
+        status="OK",
+        sound="ok",
+        sound_phrase=phrase,
+        banner_text=f"ОК №кор: {box_num} ({box_scanned} из {box_total})",
+        banner_color="success",
+        box_number=box_num,
+        box_scanned=box_scanned,
+        box_total=box_total,
+        box_places_left=places_left,
+        item_title=item.title,
+        sticker=item.sticker
     )
-
