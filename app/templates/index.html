@@ -39,7 +39,6 @@
             text-align: center; margin-top: 15px; display: none;
         }
         .history-table th { background: #e9ecef; }
-        /* Индикатор перетаскивания файлов */
         #dropOverlay {
             display: none; position: fixed; top: 0; left: 0;
             width: 100vw; height: 100vh; background: rgba(13, 110, 253, 0.2);
@@ -54,7 +53,6 @@
 <div id="dropOverlay">ПЕРЕТАЩИТЕ EXCEL ФАЙЛ СЮДА ДЛЯ ЗАГРУЗКИ</div>
 
 <div class="container-fluid">
-    <!-- Шапка активного файла -->
     <div class="active-file-banner">
         <div>📁 Активный файл: <span id="activeFileName" class="text-primary">Файл не выбран</span></div>
         <div>
@@ -96,7 +94,6 @@
         </div>
     </div>
 
-    <!-- КАРТОЧКА СКАНИРОВАНИЯ -->
     <div class="scan-card mb-4">
         <form id="scanForm" onsubmit="handleScan(event)">
             <input type="text" id="barcodeInput" class="form-control scan-input" placeholder="ОТСКАНИРУЙТЕ ШТРИХКОД..." autocomplete="off">
@@ -104,7 +101,6 @@
         <div id="bannerBox" class="banner-box"></div>
     </div>
 
-    <!-- ТАБЛИЦА СКАНИРОВАНИЙ -->
     <div class="card">
         <div class="card-header fw-bold bg-white">Последние сканирования</div>
         <div class="card-body p-0">
@@ -128,14 +124,24 @@
     const banner = document.getElementById('bannerBox');
     const overlay = document.getElementById('dropOverlay');
 
-    // Фокус на инпут
+    // Словарь русских статусов
+    const STATUS_MAP = {
+        'OK': 'ОТСКАНИРОВАН',
+        'SCANNED': 'ОТСКАНИРОВАН',
+        'BOX_COMPLETE': 'КОРОБКА ПОЛНАЯ',
+        'SEIZURE': 'ИЗЪЯТИЕ',
+        'REPEAT': 'ПОВТОР',
+        'REPEAT_SEIZURE': 'ПОВТОР ИЗЪЯТИЯ',
+        'NOT_IN_DB': 'НЕТ В БАЗЕ',
+        'INVALID': 'НЕ ТОТ ШТРИХКОД'
+    };
+
     document.addEventListener('click', () => { input.focus(); });
     window.addEventListener('load', () => {
         input.focus();
         loadCurrentState();
     });
 
-    // Аудио контекст Web Audio API
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     function playMp3(soundName) {
         if (!soundName) return;
@@ -153,17 +159,15 @@
             }).catch(e => console.log('Звук не найден:', soundName));
     }
 
-    // Речь ТОЛЬКО для мест коробки и «Коробка полная!»
     function speakText(phrase) {
         if (!phrase) return;
         window.speechSynthesis.cancel();
         const utterance = new SpeechSynthesisUtterance(phrase);
         utterance.lang = 'ru-RU';
-        utterance.rate = 1.05;
+        utterance.rate = 1.3;
         window.speechSynthesis.speak(utterance);
     }
 
-    // Восстановление состояния при старте / F5
     async function loadCurrentState() {
         try {
             const res = await fetch('/api/shipments/current');
@@ -180,12 +184,13 @@
                     tbody.innerHTML = '';
                     data.history.forEach(item => {
                         const tr = document.createElement('tr');
+                        const statusRu = STATUS_MAP[item.status] || item.status;
                         let badgeClass = 'bg-secondary';
-                        if (item.status === 'SCANNED' || item.status === 'OK' || item.status === 'BOX_COMPLETE') badgeClass = 'bg-success';
-                        if (item.status === 'SEIZURE' || item.status === 'INVALID' || item.status === 'NOT_IN_DB') badgeClass = 'bg-danger';
-                        if (item.status === 'REPEAT') badgeClass = 'bg-warning text-dark';
+                        if (['ОТСКАНИРОВАН', 'КОРОБКА ПОЛНАЯ'].includes(statusRu)) badgeClass = 'bg-success';
+                        if (['ИЗЪЯТИЕ', 'НЕ ТОТ ШТРИХКОД', 'НЕТ В БАЗЕ', 'ПОВТОР ИЗЪЯТИЯ'].includes(statusRu)) badgeClass = 'bg-danger';
+                        if (statusRu === 'ПОВТОР') badgeClass = 'bg-warning text-dark';
 
-                        tr.innerHTML = `<td>${item.time}</td><td>${item.code}</td><td><span class="badge ${badgeClass}">${item.status}</span></td><td>-</td>`;
+                        tr.innerHTML = `<td>${item.time}</td><td>${item.code}</td><td><span class="badge ${badgeClass}">${statusRu}</span></td><td>-</td>`;
                         tbody.appendChild(tr);
                     });
                 }
@@ -195,11 +200,16 @@
         }
     }
 
-    // Отправка скана
-    async function handleScan(e) {
+    // Защита от двойного нажатия сканера
+    let isScanning = false;
+
+        async function handleScan(e) {
         e.preventDefault();
+        if (isScanning) return;
         const code = input.value.trim();
         if (!code) return;
+
+        isScanning = true;
         input.value = '';
 
         try {
@@ -214,11 +224,16 @@
             banner.className = `banner-box bg-${data.banner_color} text-white`;
             banner.innerText = data.banner_text;
 
-            if (data.sound) playMp3(data.sound);
+            // ГЛАВНОЕ ИСПРАВЛЕНИЕ ЗВУКА:
+            // Если есть голос (фраза) — играем только его.
+            // Если голоса нет — играем MP3 (для изъятий, ошибок и повторов).
             if (data.sound_phrase) {
-                setTimeout(() => speakText(data.sound_phrase), 350);
+                speakText(data.sound_phrase);
+            } else if (data.sound) {
+                playMp3(data.sound);
             }
 
+            // Обновление счетчиков
             if (data.status === 'OK' || data.status === 'BOX_COMPLETE') {
                 const sItems = document.getElementById('scannedItems');
                 sItems.innerText = parseInt(sItems.innerText || '0') + 1;
@@ -233,6 +248,9 @@
 
         } catch(err) {
             console.error(err);
+        } finally {
+            // Разблокировка сканирования через 200мс (для скорости)
+            setTimeout(() => { isScanning = false; }, 200);
         }
     }
 
@@ -240,20 +258,30 @@
         const tbody = document.getElementById('historyBody');
         const tr = document.createElement('tr');
         const now = new Date().toLocaleTimeString();
+        const statusRu = STATUS_MAP[status] || status;
 
         let badgeClass = 'bg-secondary';
-        if (status === 'OK' || status === 'BOX_COMPLETE' || status === 'SCANNED') badgeClass = 'bg-success';
-        if (status === 'SEIZURE' || status === 'INVALID' || status === 'NOT_IN_DB' || status === 'REPEAT_SEIZURE') badgeClass = 'bg-danger';
-        if (status === 'REPEAT') badgeClass = 'bg-warning text-dark';
+        if (['ОТСКАНИРОВАН', 'КОРОБКА ПОЛНАЯ'].includes(statusRu)) badgeClass = 'bg-success';
+        if (['ИЗЪЯТИЕ', 'НЕ ТОТ ШТРИХКОД', 'НЕТ В БАЗЕ', 'ПОВТОР ИЗЪЯТИЯ'].includes(statusRu)) badgeClass = 'bg-danger';
+        if (statusRu === 'ПОВТОР') badgeClass = 'bg-warning text-dark';
 
-        tr.innerHTML = `<td>${now}</td><td>${code}</td><td><span class="badge ${badgeClass}">${status}</span></td><td>${title}</td>`;
+        tr.innerHTML = `<td>${now}</td><td>${code}</td><td><span class="badge ${badgeClass}">${statusRu}</span></td><td>${title}</td>`;
         tbody.insertBefore(tr, tbody.firstChild);
         if (tbody.children.length > 15) tbody.removeChild(tbody.lastChild);
     }
 
-    // ФУНКЦИЯ ЗАГРУЗКИ ФАЙЛА
+    let isUploading = false;
     async function uploadExcelFile(file) {
         if (!file) return;
+        if (isUploading) {
+            alert('Файл уже загружается, подождите пару секунд...');
+            return;
+        }
+
+        isUploading = true;
+        const bannerEl = document.getElementById('activeFileName');
+        bannerEl.innerHTML = '<span class="text-warning">⏳ ОБРАБОТКА ДАННЫХ...</span>';
+
         const formData = new FormData();
         formData.append('file', file);
 
@@ -261,36 +289,28 @@
             const res = await fetch('/api/shipments/upload', { method: 'POST', body: formData });
             const data = await res.json();
             if (data.status === 'success') {
-                loadCurrentState();
-                alert(`Файл успешно загружен!\nВсего строк: ${data.total_rows}\nИзъятий: ${data.seizures_count}`);
+                await loadCurrentState();
+                alert(`Файл загружен!\nВсего строк: ${data.total_rows}\nИзъятий: ${data.seizures_count}`);
+            } else {
+                alert('Ошибка при обработке файла');
             }
         } catch (err) {
-            alert('Ошибка при загрузке файла');
+            alert('Сбой при загрузке');
+        } finally {
+            isUploading = false;
         }
     }
 
-    // Выбор файла через кнопку
     document.getElementById('excelFileInput').addEventListener('change', (e) => {
         uploadExcelFile(e.target.files[0]);
     });
 
-    // DRAG AND DROP (Перетаскивание файла мышкой на страницу)
-    window.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        overlay.style.display = 'flex';
-    });
-
-    overlay.addEventListener('dragleave', (e) => {
-        e.preventDefault();
-        overlay.style.display = 'none';
-    });
-
+    window.addEventListener('dragover', (e) => { e.preventDefault(); overlay.style.display = 'flex'; });
+    overlay.addEventListener('dragleave', (e) => { e.preventDefault(); overlay.style.display = 'none'; });
     overlay.addEventListener('drop', (e) => {
         e.preventDefault();
         overlay.style.display = 'none';
-        if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-            uploadExcelFile(e.dataTransfer.files[0]);
-        }
+        if (e.dataTransfer.files && e.dataTransfer.files.length > 0) uploadExcelFile(e.dataTransfer.files[0]);
     });
 </script>
 
