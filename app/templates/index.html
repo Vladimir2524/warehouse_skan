@@ -234,15 +234,10 @@
             }
 
             // Обновление счетчиков
-            if (data.status === 'OK' || data.status === 'BOX_COMPLETE') {
-                const sItems = document.getElementById('scannedItems');
-                sItems.innerText = parseInt(sItems.innerText || '0') + 1;
-            } else if (data.status === 'SEIZURE') {
-                const sItems = document.getElementById('scannedItems');
-                const sSeiz = document.getElementById('scannedSeizures');
-                sItems.innerText = parseInt(sItems.innerText || '0') + 1;
-                sSeiz.innerText = parseInt(sSeiz.innerText || '0') + 1;
-            }
+            document.getElementById('totalItems').innerText = data.global_total_items;
+            document.getElementById('scannedItems').innerText = data.global_scanned_items;
+            document.getElementById('totalSeizures').innerText = data.global_total_seizures;
+            document.getElementById('scannedSeizures').innerText = data.global_scanned_seizures;
 
             addRowToHistory(code, data.status, data.item_title || '');
 

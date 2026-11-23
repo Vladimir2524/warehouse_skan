@@ -81,10 +81,24 @@ def process_scan(db: Session, code: str, desk_id: str = "PC1") -> ScanResponse:
     if box_scanned == 1 and box_total > 1:
         phrase = str(box_total)
 
+    global_total = db.query(Item).filter(Item.shipment_id == shipment_id).count()
+    global_scanned = db.query(Item).filter(Item.shipment_id == shipment_id, Item.is_scanned == True).count()
+    global_seiz_total = db.query(Item).filter(Item.shipment_id == shipment_id,
+                                              Item.seizure_type.in_(["SEIZURE", "SEIZURE_PD"])).count()
+    global_seiz_scanned = db.query(Item).filter(Item.shipment_id == shipment_id, Item.is_scanned == True,
+                                                Item.seizure_type.in_(["SEIZURE", "SEIZURE_PD"])).count()
+
+    # И передаем их в ScanResponse (добавь эти поля в каждый return ScanResponse в файле)
+    # Пример для финального return:
     return ScanResponse(
-        status="OK",
+        status="OK",  # или другой статус
         sound="ok",
         sound_phrase=phrase,
         banner_text=f"ОК №кор: {box_num} ({box_scanned}/{box_total})",
-        banner_color="success"
+        banner_color="success",
+        global_total_items=global_total,
+        global_scanned_items=global_scanned,
+        global_total_seizures=global_seiz_total,
+        global_scanned_seizures=global_seiz_scanned
     )
+

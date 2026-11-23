@@ -14,17 +14,18 @@ class ScanResponse(BaseModel):
     banner_text: Optional[str] = ""
     banner_color: Optional[str] = "secondary"
 
-    # Информация по коробке и товару
+    # Инфо по коробке
     box_number: Optional[str] = None
     box_scanned: Optional[int] = 0
     box_total: Optional[int] = 0
-    box_places_left: Optional[int] = 0
     item_title: Optional[str] = None
     sticker: Optional[str] = None
 
-    # Поля для обратной совместимости
-    message: Optional[str] = None
-    sound_file: Optional[str] = None
+    # ГЛОБАЛЬНЫЕ СЧЕТЧИКИ ДЛЯ СИНХРОНИЗАЦИИ ВСЕХ ПК
+    global_total_items: int = 0
+    global_scanned_items: int = 0
+    global_total_seizures: int = 0
+    global_scanned_seizures: int = 0
 
     class Config:
         from_attributes = True
