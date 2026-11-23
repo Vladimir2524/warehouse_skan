@@ -3,118 +3,155 @@ from sqlalchemy.orm import Session
 from app.models import Item, ScanLog, Shipment
 from app.schemas import ScanResponse
 
+
 def process_scan(db: Session, code: str, desk_id: str = "PC1") -> ScanResponse:
-    cleaned = code.strip()
+    clean_code = code.strip()
+    now = datetime.utcnow()
 
-    # 1. Активная партия
     active_shipment = db.query(Shipment).order_by(Shipment.id.desc()).first()
-    shipment_id = active_shipment.id if active_shipment else 1
+    if not active_shipment:
+        return ScanResponse(status="ОШИБКА", sound="invalid", banner_text="БАЗА ПУСТА", banner_color="danger")
 
-    # Функция для получения глобальных счетчиков (синхронизация)
-    def get_globals():
-        total = db.query(Item).filter(Item.shipment_id == shipment_id).count()
-        scanned = db.query(Item).filter(Item.shipment_id == shipment_id, Item.is_scanned == True).count()
-        seiz_total = db.query(Item).filter(Item.shipment_id == shipment_id, Item.seizure_type.in_(["SEIZURE", "SEIZURE_PD"])).count()
-        seiz_scanned = db.query(Item).filter(Item.shipment_id == shipment_id, Item.is_scanned == True, Item.seizure_type.in_(["SEIZURE", "SEIZURE_PD"])).count()
-        return total, scanned, seiz_total, seiz_scanned
+    shipment_id = active_shipment.id
 
-    g_total, g_scanned, g_s_total, g_s_scanned = get_globals()
+    def get_global_stats():
+        total_items = db.query(Item).filter(Item.shipment_id == shipment_id).count()
+        scanned_items = db.query(Item).filter(Item.shipment_id == shipment_id, Item.is_scanned == True).count()
+        total_seizures = db.query(Item).filter(Item.shipment_id == shipment_id, Item.seizure_type != "NONE").count()
+        scanned_seizures = db.query(Item).filter(Item.shipment_id == shipment_id, Item.is_scanned == True,
+                                                 Item.seizure_type != "NONE").count()
+        return total_items, scanned_items, total_seizures, scanned_seizures
 
-    # 2. Валидация штрихкода
-    if not cleaned.startswith("*") or len(cleaned) < 8:
-        return ScanResponse(
-            status="INVALID", sound="invalid", banner_text="НЕ ТОТ ШТРИХКОД", banner_color="danger",
-            global_total_items=g_total, global_scanned_items=g_scanned,
-            global_total_seizures=g_s_total, global_scanned_seizures=g_s_scanned
-        )
+    # 1. Поиск товара
+    search_code = clean_code.replace("*", "") if clean_code.startswith("*") else clean_code
+    item = db.query(Item).filter(
+        Item.shipment_id == shipment_id,
+        (Item.barcode == search_code) | (Item.sticker == search_code) |
+        (Item.barcode == clean_code) | (Item.sticker == clean_code)
+    ).first()
 
-    # 3. Поиск товара
-    item = db.query(Item).filter(Item.shipment_id == shipment_id, Item.sticker == cleaned).first()
+    # 2. НЕТ В БАЗЕ
     if not item:
-        log = ScanLog(shipment_id=shipment_id, scanned_code=cleaned, status="NOT_IN_DB", desk_id=desk_id)
+        log = ScanLog(shipment_id=shipment_id, scanned_code=clean_code, status="НЕТ В БАЗЕ", desk_id=desk_id)
         db.add(log)
         db.commit()
+        g_total, g_scanned, g_s_total, g_s_scanned = get_global_stats()
         return ScanResponse(
-            status="NOT_IN_DB", sound="not_in_db", banner_text="НЕТ В БАЗЕ", banner_color="danger",
+            status="НЕТ В БАЗЕ", sound="not_in_db", sound_file="not_in_db", sound_phrase=None,
+            banner_text="НЕТ В БАЗЕ!", banner_color="danger",
             global_total_items=g_total, global_scanned_items=g_scanned,
             global_total_seizures=g_s_total, global_scanned_seizures=g_s_scanned
         )
 
-    box_num = item.box_number
-    box_total = db.query(Item).filter(Item.shipment_id == shipment_id, Item.box_number == box_num).count()
+    # 3. DEBOUNCE (дребезг сканера)
+    if item.is_scanned and item.scanned_at and (now - item.scanned_at).total_seconds() < 0.35:
+        g_total, g_scanned, g_s_total, g_s_scanned = get_global_stats()
+        return ScanResponse(
+            status="ОТМЕНА", sound=None, sound_phrase=None,
+            global_total_items=g_total, global_scanned_items=g_scanned,
+            global_total_seizures=g_s_total, global_scanned_seizures=g_s_scanned
+        )
 
-    # 4. ЛОГИКА ПОВТОРА
+    # 4. ПОВТОР (ДАЖЕ ЕСЛИ КОРОБКА БЫЛА ПОЛНОЙ!)
     if item.is_scanned:
-        # Защита от дребезга (0.3 сек)
-        if item.scanned_at and (datetime.utcnow() - item.scanned_at).total_seconds() < 0.3:
-            return ScanResponse(
-                status="SCANNED", sound=None, banner_text="УЖЕ БЫЛ", banner_color="secondary",
-                global_total_items=g_total, global_scanned_items=g_scanned,
-                global_total_seizures=g_s_total, global_scanned_seizures=g_s_scanned
-            )
+        is_seizure = item.seizure_type != "NONE"
+        status = "ПОВТОР ИЗЪЯТИЯ" if is_seizure else "ПОВТОР"
+        sound_to_play = "repeat_seizure" if is_seizure else "repeat"
 
-        box_scanned = db.query(Item).filter(Item.shipment_id == shipment_id, Item.box_number == box_num, Item.is_scanned == True).count()
+        box_total = db.query(Item).filter(Item.shipment_id == shipment_id, Item.box_number == item.box_number).count()
+        box_scanned = db.query(Item).filter(Item.shipment_id == shipment_id, Item.box_number == item.box_number,
+                                            Item.is_scanned == True).count()
+        g_total, g_scanned, g_s_total, g_s_scanned = get_global_stats()
 
-        if box_scanned >= box_total and box_total > 0:
-            return ScanResponse(
-                status="BOX_COMPLETE", sound=None, sound_phrase="Коробка полностью отсканирована!",
-                banner_text=f"КОРОБКА ПОЛНАЯ №кор: {box_num} ({box_scanned}/{box_total})", banner_color="success",
-                global_total_items=g_total, global_scanned_items=g_scanned,
-                global_total_seizures=g_s_total, global_scanned_seizures=g_s_scanned
-            )
-
-        if item.seizure_type in ["SEIZURE", "SEIZURE_PD"]:
-            return ScanResponse(
-                status="REPEAT_SEIZURE", sound="repeat_seizure", banner_text="ПОВТОР ИЗЪЯТИЯ", banner_color="danger",
-                global_total_items=g_total, global_scanned_items=g_scanned,
-                global_total_seizures=g_s_total, global_scanned_seizures=g_s_scanned
-            )
-
+        # ТОЛЬКО звук повтора, НИКАКИХ фраз о полной коробке!
         return ScanResponse(
-            status="REPEAT", sound="repeat", banner_text="ПОВТОР ТОВАРА", banner_color="warning",
+            status=status, sound=sound_to_play, sound_file=sound_to_play, sound_phrase=None,
+            banner_text=f"{status} №{item.box_number} ({box_scanned}/{box_total})",
+            banner_color="warning",
+            box_number=item.box_number, box_scanned=box_scanned, box_total=box_total,
+            box_places_left=max(0, box_total - box_scanned),
+            item_title=item.title, sticker=item.sticker,
             global_total_items=g_total, global_scanned_items=g_scanned,
             global_total_seizures=g_s_total, global_scanned_seizures=g_s_scanned
         )
 
-    # 5. ПЕРВЫЙ УСПЕШНЫЙ СКАН
+    # 5. ПЕРВИЧНЫЙ СКАН (ТОВАР ПРИНЯТ)
     item.is_scanned = True
-    item.scanned_at = datetime.utcnow()
+    item.scanned_at = now
     item.desk_id = desk_id
     db.commit()
 
-    # Пересчитываем глобальные после записи
-    g_total, g_scanned, g_s_total, g_s_scanned = get_globals()
-    box_scanned = db.query(Item).filter(Item.shipment_id == shipment_id, Item.box_number == box_num, Item.is_scanned == True).count()
+    box_total = db.query(Item).filter(Item.shipment_id == shipment_id, Item.box_number == item.box_number).count()
+    box_scanned = db.query(Item).filter(Item.shipment_id == shipment_id, Item.box_number == item.box_number,
+                                        Item.is_scanned == True).count()
+    is_seizure = item.seizure_type != "NONE"
+    is_pd = "ПД" in (item.seizure_type or "")
+    seizure_sound = "seizure_pd" if is_pd else "seizure"
 
-    # ПРИОРИТЕТ 1: ИЗЪЯТИЕ (Только сирена!)
-    if item.seizure_type in ["SEIZURE", "SEIZURE_PD"]:
-        snd = "seizure_pd" if item.seizure_type == "SEIZURE_PD" else "seizure"
-        return ScanResponse(
-            status="SEIZURE", sound=snd, sound_phrase=None,
-            banner_text=f"ИЗЪЯТИЕ №кор: {box_num} ({box_scanned}/{box_total})", banner_color="danger",
-            item_title=item.title, sticker=item.sticker,
-            global_total_items=g_total, global_scanned_items=g_scanned,
-            global_total_seizures=g_s_total, global_scanned_seizures=g_s_scanned
-        )
+    res_sound = "ok"
+    res_phrase = None
 
-    # ПРИОРИТЕТ 2: КОРОБКА ЗАПОЛНИЛАСЬ
-    if box_scanned >= box_total and box_total > 0:
-        return ScanResponse(
-            status="BOX_COMPLETE", sound=None, sound_phrase="Коробка полностью отсканирована!",
-            banner_text=f"КОРОБКА ПОЛНАЯ №кор: {box_num} ({box_scanned}/{box_total})", banner_color="success",
-            item_title=item.title, sticker=item.sticker,
-            global_total_items=g_total, global_scanned_items=g_scanned,
-            global_total_seizures=g_s_total, global_scanned_seizures=g_s_scanned
-        )
+    # --- ЖЕЛЕЗНАЯ ЛОГИКА ОЗВУЧКИ ---
+    if box_scanned >= box_total and box_total > 1:
+        # КОРОБКА ЗАПОЛНИЛАСЬ
+        res_sound = "box_complete"
+        res_phrase = "изъятие коробка полная" if is_seizure else "коробка полная"
 
-    # ПРИОРИТЕТ 3: ОЗВУЧКА ПЕРВОГО ТОВАРА
-    phrase = str(box_total) if (box_scanned == 1 and box_total > 1) else None
+    elif box_scanned == 1:
+        # ПЕРВЫЙ СКАН В КОРОБКЕ (НАЧАЛО 1/Х)
+        if box_total == 1:
+            # Если коробка вообще состоит из 1 места
+            res_sound = "box_complete"
+            res_phrase = "изъятие коробка полная" if is_seizure else "коробка полная"
+        else:
+            if is_seizure:
+                # ВАЖНО: Выключаем mp3, чтобы синтезатор СРАЗУ и без задержек сказал комбо!
+                res_sound = None
+                seizure_word = "изъятие ПД" if is_pd else "изъятие"
+                res_phrase = f"{seizure_word} {box_total}"
+            else:
+                # Чистый первый скан: пик + число мест
+                res_sound = "ok"
+                res_phrase = str(box_total)
+    else:
+        # СЕРЕДИНА КОРОБКИ (2/X, 3/X и т.д.)
+        if is_seizure:
+            # Обычные изъятия в середине: играет наш MP3 голос из папки, синтезатор молчит!
+            res_sound = seizure_sound
+            res_phrase = None
+        else:
+            # Обычный чистый: просто пик ok.mp3
+            res_sound = "ok"
+            res_phrase = None
+
+    # Баннер (Статус №Коробки X/Y)
+    status_label = "ИЗЪЯТИЕ" if is_seizure else "ОТСКАНИРОВАН"
+    banner_text = f"{status_label} №{item.box_number} ({box_scanned}/{box_total})"
+    banner_color = "danger" if is_seizure else "success"
+
+    log = ScanLog(shipment_id=shipment_id, item_id=item.id, scanned_code=clean_code, status=status_label,
+                  desk_id=desk_id)
+    db.add(log)
+    db.commit()
+
+    g_total, g_scanned, g_s_total, g_s_scanned = get_global_stats()
 
     return ScanResponse(
-        status="OK", sound="ok", sound_phrase=phrase,
-        banner_text=f"ОК №кор: {box_num} ({box_scanned}/{box_total})", banner_color="success",
-        item_title=item.title, sticker=item.sticker,
-        global_total_items=g_total, global_scanned_items=g_scanned,
-        global_total_seizures=g_s_total, global_scanned_seizures=g_s_scanned
+        status=status_label,
+        sound=res_sound,
+        sound_file=res_sound,
+        sound_phrase=res_phrase,
+        banner_text=banner_text,
+        banner_color=banner_color,
+        box_number=item.box_number,
+        box_scanned=box_scanned,
+        box_total=box_total,
+        box_places_left=max(0, box_total - box_scanned),
+        item_title=item.title,
+        sticker=item.sticker,
+        global_total_items=g_total,
+        global_scanned_items=g_scanned,
+        global_total_seizures=g_s_total,
+        global_scanned_seizures=g_s_scanned
     )
 
