@@ -1,96 +1,137 @@
 import io
-import pandas as pd
+import openpyxl
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
 from sqlalchemy.orm import Session
-from app.models import Item, Shipment, ScanLog
-
+from app.models import Item, ScanLog, Shipment
 
 def generate_excel_report(db: Session, shipment_id: int = None) -> io.BytesIO:
-    # 1. Определяем нужную партию
-    if not shipment_id:
-        target = db.query(Shipment).join(Item).order_by(Shipment.id.desc()).first()
-        if not target:
-            target = db.query(Shipment).order_by(Shipment.id.desc()).first()
-        shipment_id = target.id if target else 1
+    if shipment_id:
+        shipment = db.query(Shipment).filter(Shipment.id == shipment_id).first()
+    else:
+        shipment = db.query(Shipment).order_by(Shipment.id.desc()).first()
 
-    # 2. Выбираем товары
-    items = db.query(Item).filter(Item.shipment_id == shipment_id).all()
+    if not shipment:
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Пусто"
+        ws["A1"] = "База пуста или партия не найдена"
+        output = io.BytesIO()
+        wb.save(output)
+        output.seek(0)
+        return output
 
-    # Страховка: если по ID товаров нет, берем партию, где они точно есть
-    if not items:
-        fallback = db.query(Item).order_by(Item.id.desc()).first()
-        if fallback:
-            shipment_id = fallback.shipment_id
-            items = db.query(Item).filter(Item.shipment_id == shipment_id).all()
+    items = db.query(Item).filter(Item.shipment_id == shipment.id).all()
+    logs = db.query(ScanLog).filter(ScanLog.shipment_id == shipment.id).all()
 
-    # 3. Собираем данные
-    data_all = []
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)
+
+    header_fill = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
+    header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+    data_font = Font(name="Calibri", size=10)
+    center_align = Alignment(horizontal="center", vertical="center")
+    left_align = Alignment(horizontal="left", vertical="center")
+    thin_border = Border(
+        left=Side(style='thin', color='D9D9D9'),
+        right=Side(style='thin', color='D9D9D9'),
+        top=Side(style='thin', color='D9D9D9'),
+        bottom=Side(style='thin', color='D9D9D9')
+    )
+
+    def apply_sheet_style(ws, headers):
+        ws.append(headers)
+        for col_idx in range(1, len(headers) + 1):
+            cell = ws.cell(row=1, column=col_idx)
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = center_align
+
+    # 1. Все товары
+    ws_all = wb.create_sheet(title="Все товары")
+    headers_all = ["Штрихкод", "Стикер", "Коробка", "Название", "Вес", "Статус", "Изъятие", "Брак", "Время скана", "Стол"]
+    apply_sheet_style(ws_all, headers_all)
+
     for it in items:
-        if it.seizure_type == "SEIZURE_PD":
-            seiz_label = "ИЗЪЯТИЕ: ПД"
-        elif it.seizure_type == "SEIZURE":
-            seiz_label = "ИЗЪЯТИЕ"
-        else:
-            seiz_label = "НЕТ"
-
-        data_all.append({
-            "Штрихкод (Стикер)": it.sticker or "",
-            "Баркод товара": it.barcode or "",
-            "Коробка": it.box_number or "",
-            "Наименование": it.title or "",
-            "Статус": "ОТСКАНИРОВАН" if it.is_scanned else "НЕ НАЙДЕН",
-            "Тип изъятия": seiz_label,
-            "Время сканирования": it.scanned_at.strftime("%Y-%m-%d %H:%M:%S") if it.scanned_at else "",
-            "Рабочее место": it.desk_id or ""
-        })
-
-    df_all = pd.DataFrame(data_all)
-    if df_all.empty:
-        df_all = pd.DataFrame(columns=[
-            "Штрихкод (Стикер)", "Баркод товара", "Коробка", "Наименование",
-            "Статус", "Тип изъятия", "Время сканирования", "Рабочее место"
+        status_txt = "Отсканирован" if it.is_scanned else "Не отсканирован"
+        scan_time = it.scanned_at.strftime("%Y-%m-%d %H:%M:%S") if it.scanned_at else ""
+        is_def = getattr(it, 'is_defect', False)
+        defect_txt = "ДА (БРАК)" if is_def else "Нет"
+        weight_txt = getattr(it, 'weight', '') or ""
+        ws_all.append([
+            it.barcode, it.sticker, it.box_number, it.title, weight_txt,
+            status_txt, it.seizure_type, defect_txt, scan_time, it.desk_id or ""
         ])
 
-    df_seizures = df_all[df_all["Тип изъятия"] != "НЕТ"] if not df_all.empty else df_all.copy()
-    df_unscanned = df_all[df_all["Статус"] == "НЕ НАЙДЕН"] if not df_all.empty else df_all.copy()
+    # 2. Все Изъятия
+    ws_seiz = wb.create_sheet(title="Все Изъятия")
+    headers_seiz = ["Штрихкод", "Стикер", "Коробка", "Название", "Вес", "Тип изъятия", "Статус", "Время скана", "Стол"]
+    apply_sheet_style(ws_seiz, headers_seiz)
 
-    # Лист со штрихкодами, которых не было в накладной
-    unknown_scans = db.query(ScanLog).filter(
-        ScanLog.shipment_id == shipment_id,
-        ScanLog.status == "NOT_IN_DB"
-    ).all()
+    for it in items:
+        if it.seizure_type != "NONE":
+            status_txt = "Отсканирован" if it.is_scanned else "Не отсканирован"
+            scan_time = it.scanned_at.strftime("%Y-%m-%d %H:%M:%S") if it.scanned_at else ""
+            weight_txt = getattr(it, 'weight', '') or ""
+            ws_seiz.append([
+                it.barcode, it.sticker, it.box_number, it.title, weight_txt,
+                it.seizure_type, status_txt, scan_time, it.desk_id or ""
+            ])
 
-    data_unknown = [{
-        "Отсканированный код": s.scanned_code,
-        "Время сканирования": s.created_at.strftime("%Y-%m-%d %H:%M:%S") if s.created_at else "",
-        "Рабочее место": s.desk_id or ""
-    } for s in unknown_scans]
-    df_unknown = pd.DataFrame(data_unknown)
+    # 3. Не отсканировано
+    ws_not = wb.create_sheet(title="Не отсканировано")
+    headers_not = ["Штрихкод", "Стикер", "Коробка", "Название", "Вес", "Изъятие"]
+    apply_sheet_style(ws_not, headers_not)
 
-    # 4. Запись в Excel с автофильтром и подгонкой ширины
+    for it in items:
+        if not it.is_scanned:
+            weight_txt = getattr(it, 'weight', '') or ""
+            ws_not.append([
+                it.barcode, it.sticker, it.box_number, it.title, weight_txt, it.seizure_type
+            ])
+
+    # 4. Зайцы
+    ws_rabbits = wb.create_sheet(title="Зайцы")
+    headers_rabbits = ["Отсканированный ШХ / Код", "Статус", "Время скана", "Стол"]
+    apply_sheet_style(ws_rabbits, headers_rabbits)
+
+    for lg in logs:
+        if lg.status in ["НЕТ В БАЗЕ", "НЕ ТОТ ШТРИХКОД"]:
+            l_time = lg.created_at.strftime("%Y-%m-%d %H:%M:%S") if lg.created_at else ""
+            ws_rabbits.append([lg.scanned_code, "ЗАЯЦ (НЕТ В БАЗЕ)", l_time, lg.desk_id or ""])
+
+    # 5. Брак
+    ws_defect = wb.create_sheet(title="Брак")
+    headers_defect = ["Штрихкод", "Стикер", "Коробка", "Название", "Вес", "Изъятие", "Время скана", "Стол"]
+    apply_sheet_style(ws_defect, headers_defect)
+
+    for it in items:
+        if getattr(it, 'is_defect', False):
+            scan_time = it.scanned_at.strftime("%Y-%m-%d %H:%M:%S") if it.scanned_at else ""
+            weight_txt = getattr(it, 'weight', '') or ""
+            ws_defect.append([
+                it.barcode, it.sticker, it.box_number, it.title, weight_txt,
+                it.seizure_type, scan_time, it.desk_id or ""
+            ])
+
+    for sheet in wb.worksheets:
+        if sheet.max_row >= 1:
+            sheet.auto_filter.ref = sheet.dimensions
+        for row in sheet.iter_rows(min_row=2):
+            for cell in row:
+                cell.font = data_font
+                cell.border = thin_border
+                cell.alignment = left_align
+
+        for col in sheet.columns:
+            max_len = 0
+            col_letter = get_column_letter(col[0].column)
+            for cell in col:
+                val = str(cell.value or "")
+                max_len = max(max_len, len(val))
+            sheet.column_dimensions[col_letter].width = max(max_len + 4, 12)
+
     output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        df_all.to_excel(writer, sheet_name="Все товары", index=False)
-        df_seizures.to_excel(writer, sheet_name="Все Изъятия", index=False)
-        df_unscanned.to_excel(writer, sheet_name="Не отсканировано", index=False)
-
-        if not df_unknown.empty:
-            df_unknown.to_excel(writer, sheet_name="Не было в базе", index=False)
-
-        workbook = writer.book
-        for ws in workbook.worksheets:
-            # Включаем фильтры-стрелочки на шапку
-            if ws.max_row > 1:
-                ws.auto_filter.ref = ws.dimensions
-
-            # Автоматическая ширина ячеек, чтобы текст не обрезался
-            for col in ws.columns:
-                max_len = 0
-                col_letter = col[0].column_letter
-                for cell in col:
-                    val = str(cell.value or '')
-                    if len(val) > max_len:
-                        max_len = len(val)
-                ws.column_dimensions[col_letter].width = max(max_len + 3, 14)
-
+    wb.save(output)
     output.seek(0)
     return output

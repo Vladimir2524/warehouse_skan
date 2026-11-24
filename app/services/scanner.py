@@ -4,7 +4,7 @@ from app.models import Item, ScanLog, Shipment
 from app.schemas import ScanResponse
 
 
-def process_scan(db: Session, code: str, desk_id: str = "PC1") -> ScanResponse:
+def process_scan(db: Session, code: str, desk_id: str = "PC1", is_defect: bool = False) -> ScanResponse:
     clean_code = code.strip()
     now = datetime.utcnow()
 
@@ -23,14 +23,16 @@ def process_scan(db: Session, code: str, desk_id: str = "PC1") -> ScanResponse:
         return total_items, scanned_items, total_seizures, scanned_seizures
 
     # 1. Поиск товара
-    search_code = clean_code.replace("*", "") if clean_code.startswith("*") else clean_code
+    clean_code = code.strip()
+    search_code = clean_code.replace("*", "").strip()
+
     item = db.query(Item).filter(
         Item.shipment_id == shipment_id,
         (Item.barcode == search_code) | (Item.sticker == search_code) |
         (Item.barcode == clean_code) | (Item.sticker == clean_code)
     ).first()
 
-    # 2. НЕТ В БАЗЕ
+    # 2. НЕТ В БАЗЕ ("ЗАЯЦ")
     if not item:
         log = ScanLog(shipment_id=shipment_id, scanned_code=clean_code, status="НЕТ В БАЗЕ", desk_id=desk_id)
         db.add(log)
@@ -38,7 +40,7 @@ def process_scan(db: Session, code: str, desk_id: str = "PC1") -> ScanResponse:
         g_total, g_scanned, g_s_total, g_s_scanned = get_global_stats()
         return ScanResponse(
             status="НЕТ В БАЗЕ", sound="not_in_db", sound_file="not_in_db", sound_phrase=None,
-            banner_text="НЕТ В БАЗЕ!", banner_color="danger",
+            banner_text="ЗАЯЦ! ТОВАРА НЕТ В БАЗЕ!", banner_color="danger",
             global_total_items=g_total, global_scanned_items=g_scanned,
             global_total_seizures=g_s_total, global_scanned_seizures=g_s_scanned
         )
@@ -52,8 +54,13 @@ def process_scan(db: Session, code: str, desk_id: str = "PC1") -> ScanResponse:
             global_total_seizures=g_s_total, global_scanned_seizures=g_s_scanned
         )
 
-    # 4. ПОВТОР (ДАЖЕ ЕСЛИ КОРОБКА БЫЛА ПОЛНОЙ!)
+    # 4. ПОВТОРНЫЙ СКАН
     if item.is_scanned:
+        # Если при повторе включен режим БРАК — помечаем браком даже уже отсканированный!
+        if is_defect and not item.is_defect:
+            item.is_defect = True
+            db.commit()
+
         is_seizure = item.seizure_type != "NONE"
         status = "ПОВТОР ИЗЪЯТИЯ" if is_seizure else "ПОВТОР"
         sound_to_play = "repeat_seizure" if is_seizure else "repeat"
@@ -63,22 +70,27 @@ def process_scan(db: Session, code: str, desk_id: str = "PC1") -> ScanResponse:
                                             Item.is_scanned == True).count()
         g_total, g_scanned, g_s_total, g_s_scanned = get_global_stats()
 
-        # ТОЛЬКО звук повтора, НИКАКИХ фраз о полной коробке!
+        banner_msg = f"{status} №{item.box_number} ({box_scanned}/{box_total})"
+        if item.is_defect:
+            banner_msg += " [БРАК]"
+
         return ScanResponse(
             status=status, sound=sound_to_play, sound_file=sound_to_play, sound_phrase=None,
-            banner_text=f"{status} №{item.box_number} ({box_scanned}/{box_total})",
+            banner_text=banner_msg,
             banner_color="warning",
             box_number=item.box_number, box_scanned=box_scanned, box_total=box_total,
             box_places_left=max(0, box_total - box_scanned),
-            item_title=item.title, sticker=item.sticker,
+            item_title=item.title, sticker=item.sticker, weight=item.weight,
             global_total_items=g_total, global_scanned_items=g_scanned,
             global_total_seizures=g_s_total, global_scanned_seizures=g_s_scanned
         )
 
-    # 5. ПЕРВИЧНЫЙ СКАН (ТОВАР ПРИНЯТ)
+    # 5. ПЕРВИЧНЫЙ СКАН (УСПЕХ)
     item.is_scanned = True
     item.scanned_at = now
     item.desk_id = desk_id
+    if is_defect:
+        item.is_defect = True
     db.commit()
 
     box_total = db.query(Item).filter(Item.shipment_id == shipment_id, Item.box_number == item.box_number).count()
@@ -91,43 +103,48 @@ def process_scan(db: Session, code: str, desk_id: str = "PC1") -> ScanResponse:
     res_sound = "ok"
     res_phrase = None
 
-    # --- ЖЕЛЕЗНАЯ ЛОГИКА ОЗВУЧКИ ---
+    # Озвучка
     if box_scanned >= box_total and box_total > 1:
-        # КОРОБКА ЗАПОЛНИЛАСЬ
         res_sound = "box_complete"
         res_phrase = "изъятие коробка полная" if is_seizure else "коробка полная"
-
     elif box_scanned == 1:
-        # ПЕРВЫЙ СКАН В КОРОБКЕ (НАЧАЛО 1/Х)
         if box_total == 1:
-            # Если коробка вообще состоит из 1 места
             res_sound = "box_complete"
             res_phrase = "изъятие коробка полная" if is_seizure else "коробка полная"
         else:
             if is_seizure:
-                # ВАЖНО: Выключаем mp3, чтобы синтезатор СРАЗУ и без задержек сказал комбо!
                 res_sound = None
                 seizure_word = "изъятие ПД" if is_pd else "изъятие"
                 res_phrase = f"{seizure_word} {box_total}"
             else:
-                # Чистый первый скан: пик + число мест
                 res_sound = "ok"
                 res_phrase = str(box_total)
     else:
-        # СЕРЕДИНА КОРОБКИ (2/X, 3/X и т.д.)
         if is_seizure:
-            # Обычные изъятия в середине: играет наш MP3 голос из папки, синтезатор молчит!
             res_sound = seizure_sound
             res_phrase = None
         else:
-            # Обычный чистый: просто пик ok.mp3
             res_sound = "ok"
             res_phrase = None
 
-    # Баннер (Статус №Коробки X/Y)
-    status_label = "ИЗЪЯТИЕ" if is_seizure else "ОТСКАНИРОВАН"
+    # Если включен режим БРАК — озвучиваем брак
+    if is_defect:
+        res_phrase = f"брак {res_phrase}" if res_phrase else "брак"
+
+    # Визуал баннера
+    if is_defect:
+        status_label = "БРАК"
+        banner_color = "danger"
+    elif is_seizure:
+        status_label = "ИЗЪЯТИЕ"
+        banner_color = "danger"
+    else:
+        status_label = "ОТСКАНИРОВАН"
+        banner_color = "success"
+
     banner_text = f"{status_label} №{item.box_number} ({box_scanned}/{box_total})"
-    banner_color = "danger" if is_seizure else "success"
+    if is_defect and is_seizure:
+        banner_text += " [ИЗЪЯТИЕ]"
 
     log = ScanLog(shipment_id=shipment_id, item_id=item.id, scanned_code=clean_code, status=status_label,
                   desk_id=desk_id)
@@ -149,6 +166,7 @@ def process_scan(db: Session, code: str, desk_id: str = "PC1") -> ScanResponse:
         box_places_left=max(0, box_total - box_scanned),
         item_title=item.title,
         sticker=item.sticker,
+        weight=item.weight,
         global_total_items=g_total,
         global_scanned_items=g_scanned,
         global_total_seizures=g_s_total,

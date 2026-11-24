@@ -5,7 +5,7 @@ from app.models import Shipment, Item
 
 
 def parse_excel_to_db(content: bytes, filename: str, db: Session):
-    # 1. Читаем Excel из байтов
+    # 1. Читаем Excel из байтов (ровно как у тебя было)
     df = pd.read_excel(io.BytesIO(content))
     df = df.fillna("")
 
@@ -21,7 +21,8 @@ def parse_excel_to_db(content: bytes, filename: str, db: Session):
         "barcode": "",
         "box": "",
         "title": "",
-        "prohibition": ""
+        "prohibition": "",
+        "weight": ""  # <--- Добавили колонку веса
     }
 
     for col in df.columns:
@@ -36,6 +37,9 @@ def parse_excel_to_db(content: bytes, filename: str, db: Session):
         # Коробка
         elif "короб" in c_low:
             col_map["box"] = col
+        # Вес (НОВОЕ)
+        elif any(k in c_low for k in ["вес", "масс", "weight", "брутто"]):
+            col_map["weight"] = col
         # Название товара (строго исключаем ссылки и фото)
         elif ("наименование" in c_low or "предмет" in c_low) and not any(
                 x in c_low for x in ["ссылк", "url", "фото", "link"]):
@@ -70,14 +74,21 @@ def parse_excel_to_db(content: bytes, filename: str, db: Session):
             s_type = "SEIZURE"
             seizures_count += 1
 
+        # Вес (если колонка найдена)
+        w_val = str(row.get(col_map["weight"], "")).strip() if col_map["weight"] else ""
+        if w_val.endswith(".0"):
+            w_val = w_val[:-2]
+
         items_to_create.append({
             "shipment_id": shipment.id,
             "sticker": raw_sticker,
-            "barcode": str(row.get(col_map["barcode"], "")),
-            "box_number": str(row.get(col_map["box"], "")),
-            "title": str(row.get(col_map["title"], "")),
+            "barcode": str(row.get(col_map["barcode"], "")).strip(),
+            "box_number": str(row.get(col_map["box"], "")).strip(),
+            "title": str(row.get(col_map["title"], "")).strip(),
+            "weight": w_val,
             "seizure_type": s_type,
-            "is_scanned": False
+            "is_scanned": False,
+            "is_defect": False
         })
 
     # 5. Массовая вставка
