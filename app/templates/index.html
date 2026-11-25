@@ -6,265 +6,529 @@
     <title>WarehouseScanner - Склад</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
-        body { background-color: #f4f6f9; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        body {
+            background-color: #f4f6f9;
+            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+        }
+        .navbar-custom {
+            background-color: #212529;
+            padding: 10px 20px;
+        }
         .active-file-banner {
-            background-color: #e9ecef; border: 1px solid #ced4da;
-            padding: 8px 16px; border-radius: 6px; font-weight: bold;
-            color: #495057; display: flex; justify-content: space-between;
-            align-items: center; margin-bottom: 12px;
+            background-color: #e9ecef;
+            border: 1px solid #ced4da;
+            padding: 10px 18px;
+            border-radius: 8px;
+            font-weight: 700;
+            font-size: 1.05rem;
+            color: #495057;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 14px;
         }
         .metric-card {
-            background: white; border-radius: 8px;
-            padding: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-            text-align: center; border-left: 5px solid #0d6efd;
+            background: white;
+            border-radius: 8px;
+            padding: 16px 12px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.06);
+            text-align: center;
+            border-top: 5px solid #0d6efd;
         }
-        .metric-card-danger { border-left-color: #dc3545; }
-        .metric-card-warning { border-left-color: #ffc107; }
-        .metric-card-success { border-left-color: #198754; }
-        .metric-value { font-size: 2.8rem; font-weight: 800; line-height: 1.1; }
-        .metric-label { font-size: 0.85rem; font-weight: 700; color: #6c757d; text-transform: uppercase; margin-top: 5px; }
-        .scan-card {
-            background: white; border-radius: 10px;
-            padding: 25px; box-shadow: 0 4px 6px rgba(0,0,0,0.08);
-            border-top: 4px solid #ffc107;
+        .metric-card-scanned { border-top-color: #198754; }
+        .metric-card-warning { border-top-color: #dc3545; }
+        .metric-card-danger { border-top-color: #d63384; }
+
+        .metric-value {
+            font-size: 3.4rem;
+            font-weight: 900;
+            line-height: 1.05;
         }
+        .metric-label {
+            font-size: 0.9rem;
+            font-weight: 700;
+            color: #6c757d;
+            text-transform: uppercase;
+            margin-top: 6px;
+        }
+
+        .scanner-box {
+            background: white;
+            border-radius: 10px;
+            padding: 24px;
+            box-shadow: 0 3px 6px rgba(0,0,0,0.08);
+            border: 2px solid #ffc107;
+            transition: all 0.2s ease;
+        }
+        .scanner-box.defect-active {
+            border: 3px solid #dc3545 !important;
+            background-color: #fff5f5 !important;
+            box-shadow: 0 0 20px rgba(220, 53, 69, 0.3) !important;
+        }
+
         .scan-input {
-            font-size: 1.8rem; height: 65px;
-            text-align: center; font-weight: bold;
+            font-size: 2.2rem;
+            height: 75px;
+            text-align: center;
+            font-weight: 800;
             letter-spacing: 2px;
+            border: 2px solid #ffc107;
+            border-radius: 8px;
         }
+        .scan-input:focus {
+            box-shadow: 0 0 0 0.3rem rgba(255, 193, 7, 0.35);
+            border-color: #ffc107;
+        }
+
         .banner-box {
-            font-size: 1.6rem; font-weight: bold;
-            padding: 16px; border-radius: 8px;
-            text-align: center; margin-top: 15px; display: none;
+            font-size: 2.3rem;
+            font-weight: 900;
+            padding: 22px 15px;
+            border-radius: 10px;
+            text-align: center;
+            margin-top: 18px;
+            display: none;
+            letter-spacing: 1px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.12);
         }
-        .history-table th { background: #e9ecef; }
+
+        .current-product-title {
+            font-size: 1.45rem;
+            font-weight: 700;
+            color: #212529;
+            margin-top: 15px;
+            line-height: 1.3;
+        }
+
+        .history-table th {
+            background: #f8f9fa;
+            font-size: 0.95rem;
+            font-weight: bold;
+            color: #495057;
+        }
+        .history-table td {
+            font-size: 1.05rem;
+        }
+
         #dropOverlay {
-            display: none; position: fixed; top: 0; left: 0;
-            width: 100vw; height: 100vh; background: rgba(13, 110, 253, 0.2);
-            border: 4px dashed #0d6efd; z-index: 9999;
-            align-items: center; justify-content: center;
-            font-size: 2rem; font-weight: bold; color: #0d6efd;
+            display: none;
+            position: fixed;
+            top: 0; left: 0;
+            width: 100vw; height: 100vh;
+            background: rgba(13, 110, 253, 0.35);
+            border: 5px dashed #0d6efd;
+            z-index: 9999;
+            align-items: center;
+            justify-content: center;
+            font-size: 2.5rem;
+            font-weight: 900;
+            color: #fff;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.5);
         }
     </style>
 </head>
-<body class="p-3">
+<body>
 
 <div id="dropOverlay">ПЕРЕТАЩИТЕ EXCEL ФАЙЛ СЮДА ДЛЯ ЗАГРУЗКИ</div>
 
-<div class="container-fluid">
+<!-- НАВБАР -->
+<nav class="navbar-custom text-white d-flex justify-content-between align-items-center mb-3">
+    <div class="d-flex align-items-center gap-3">
+        <span class="fs-4 fw-bold tracking-wide">WarehouseScanner</span>
+    </div>
+    <div class="d-flex align-items-center gap-2">
+        <span class="text-secondary me-1 fw-bold">Стол:</span>
+        <input type="text" id="deskIdInput" class="form-control form-control-sm text-center fw-bold me-3" style="width: 75px;" value="PC1">
+        <input type="file" id="excelFileInput" style="display: none;" accept=".xlsx, .xls">
+        <button class="btn btn-sm btn-outline-light fw-bold" onclick="document.getElementById('excelFileInput').click()">Загрузить Excel</button>
+        <button class="btn btn-sm btn-primary fw-bold" onclick="openHistoryModal()">📁 История партий</button>
+        <a href="/api/shipments/last/report" class="btn btn-sm btn-success fw-bold">Скачать отчет</a>
+    </div>
+</nav>
+
+<div class="container-fluid px-4">
+    <!-- АКТИВНЫЙ ФАЙЛ БЕЗ ВРЕМЕНИ -->
     <div class="active-file-banner">
-        <div>📁 Активный файл: <span id="activeFileName" class="text-primary">Файл не выбран</span></div>
         <div>
-            <input type="file" id="excelFileInput" style="display: none;" accept=".xlsx, .xls">
-            <button class="btn btn-sm btn-outline-primary me-2" onclick="document.getElementById('excelFileInput').click()">Загрузить Excel</button>
-            <a href="/api/shipments/last/report" class="btn btn-sm btn-outline-success">Скачать отчет</a>
+            Активная партия: <span id="activeFileName" class="text-primary fw-bold">Реестр_загружается...</span>
         </div>
     </div>
 
-    <!-- ВЕРХНИЙ БЛОК: ИЗЪЯТИЯ (Глобальные) -->
-    <div class="row g-3 mb-2">
-        <div class="col-md-6">
-            <div class="metric-card metric-card-warning">
-                <div class="metric-value text-dark" id="totalSeizures">0</div>
-                <div class="metric-label">СКОЛЬКО ВСЕГО ИЗЪЯТИЙ В ФАЙЛЕ</div>
-            </div>
-        </div>
-        <div class="col-md-6">
-            <div class="metric-card metric-card-danger">
-                <div class="metric-value text-danger" id="scannedSeizures">0</div>
-                <div class="metric-label">ИЗЪЯТИЙ ПИКНУЛИ (СЕЙЧАС)</div>
-            </div>
-        </div>
-    </div>
-
-    <!-- ВТОРОЙ БЛОК: ОБЩЕЕ КОЛИЧЕСТВО (Глобальные) -->
+    <!-- МЕТРИКИ (ОГРОМНЫЕ ЦИФРЫ) -->
     <div class="row g-3 mb-3">
-        <div class="col-md-6">
+        <div class="col-md-3">
             <div class="metric-card">
-                <div class="metric-value text-primary" id="totalItems">0</div>
-                <div class="metric-label">СКОЛЬКО ВСЕГО ТОВАРОВ В ФАЙЛЕ</div>
+                <div class="metric-label">Всего товаров в партии</div>
+                <div class="metric-value text-dark" id="totalItems">0</div>
             </div>
         </div>
-        <div class="col-md-6">
-            <div class="metric-card metric-card-success">
+        <div class="col-md-3">
+            <div class="metric-card metric-card-scanned">
+                <div class="metric-label">Отсканировано товаров</div>
                 <div class="metric-value text-success" id="scannedItems">0</div>
-                <div class="metric-label">ОТСКАНИРОВАНО ТОВАРОВ</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="metric-card metric-card-warning">
+                <div class="metric-label">Всего изъятий в файле</div>
+                <div class="metric-value text-danger" id="totalSeizures">0</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="metric-card metric-card-danger">
+                <div class="metric-label">Изъято сейчас (скан)</div>
+                <div class="metric-value text-danger" id="scannedSeizures">0</div>
             </div>
         </div>
     </div>
 
-    <div class="scan-card mb-4">
-        <form id="scanForm" onsubmit="handleScan(event)">
-            <input type="text" id="barcodeInput" class="form-control scan-input" placeholder="ОТСКАНИРУЙТЕ ШТРИХКОД..." autocomplete="off">
-        </form>
-        <div id="bannerBox" class="banner-box"></div>
-    </div>
+    <!-- ЗОНА СКАНИРОВАНИЯ И ТАБЛИЦА -->
+    <div class="row g-3">
+        <div class="col-lg-7">
+            <div class="scanner-box" id="scannerCardBox">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span class="fw-bold text-secondary text-uppercase" style="letter-spacing: 1px;">СКАНЕР ШТРИХКОДА</span>
+                    <div class="form-check form-switch d-flex align-items-center gap-2 m-0">
+                        <input class="form-check-input" type="checkbox" id="defectSwitch" onchange="toggleDefectMode(this.checked)" style="cursor: pointer; width: 45px; height: 24px;">
+                        <label class="form-check-label fw-bold text-danger" for="defectSwitch" style="cursor: pointer; font-size: 1.05rem;">
+                            Режим: БРАК (F2)
+                        </label>
+                    </div>
+                </div>
 
-    <div class="card">
-        <div class="card-header fw-bold bg-white">Последние сканирования</div>
-        <div class="card-body p-0">
-            <table class="table table-striped mb-0 history-table">
-                <thead>
-                    <tr>
-                        <th style="width: 15%;">Время</th>
-                        <th style="width: 30%;">Штрихкод</th>
-                        <th style="width: 25%;">Статус</th>
-                        <th style="width: 30%;">Товар</th>
-                    </tr>
-                </thead>
-                <tbody id="historyBody"></tbody>
-            </table>
+                <form id="scanForm" onsubmit="handleScan(event)">
+                    <input type="text" id="barcodeInput" class="form-control scan-input mt-2" placeholder="Сканируйте штрихкод..." autocomplete="off">
+                </form>
+
+                <!-- БАННЕР -->
+                <div id="bannerBox" class="banner-box">ОЖИДАНИЕ СКАНИРОВАНИЯ</div>
+
+                <!-- НАИМЕНОВАНИЕ ТОВАРА -->
+                <div class="mt-3 pt-2 border-top">
+                    <div class="text-muted small fw-bold text-uppercase">Текущий товар:</div>
+                    <div id="itemTitleDisplay" class="current-product-title text-truncate">Ожидание первого сканирования...</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-5">
+            <div class="card shadow-sm h-100">
+                <div class="card-header bg-white fw-bold py-3 text-secondary text-uppercase" style="letter-spacing: 1px;">
+                    Последние сканирования
+                </div>
+                <div class="card-body p-0">
+                    <table class="table table-hover align-middle mb-0 history-table">
+                        <thead>
+                            <tr>
+                                <th style="width: 22%;">Время</th>
+                                <th style="width: 32%;">Штрихкод</th>
+                                <th style="width: 24%;">Статус</th>
+                                <th style="width: 22%;">Коробка</th>
+                            </tr>
+                        </thead>
+                        <tbody id="scanTableBody">
+                            <tr>
+                                <td colspan="4" class="text-center text-muted py-4">Нет сканирований в этой смене</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
     </div>
 </div>
 
+<!-- МОДАЛКА: ИСТОРИЯ ПАРТИЙ -->
+<div class="modal fade" id="historyModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-dark text-white">
+                <h5 class="modal-title fw-bold">📦 История всех поставок на сервере</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-0">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>ID</th>
+                            <th>Файл поставки</th>
+                            <th>Дата загрузки (МСК)</th>
+                            <th>Товаров</th>
+                            <th>Изъятий</th>
+                            <th>Брак</th>
+                            <th class="text-end">Отчет</th>
+                        </tr>
+                    </thead>
+                    <tbody id="historyTableBody">
+                        <tr><td colspan="7" class="text-center py-4 text-muted">Загрузка...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
-    const input = document.getElementById('barcodeInput');
-    const banner = document.getElementById('bannerBox');
-    const overlay = document.getElementById('dropOverlay');
+    let isDefectMode = false;
+    let historyModalInstance = null;
+    let lastScanTime = 0;
 
-    const STATUS_MAP = {
-        'OK': 'ОТСКАНИРОВАН', 'SCANNED': 'ОТСКАНИРОВАН', 'BOX_COMPLETE': 'КОРОБКА ПОЛНАЯ',
-        'SEIZURE': 'ИЗЪЯТИЕ', 'REPEAT': 'ПОВТОР', 'REPEAT_SEIZURE': 'ПОВТОР ИЗЪЯТИЯ',
-        'NOT_IN_DB': 'НЕТ В БАЗЕ', 'INVALID': 'НЕ ТОТ ШТРИХКОД'
-    };
+    document.addEventListener("DOMContentLoaded", function() {
+        historyModalInstance = new bootstrap.Modal(document.getElementById('historyModal'));
+        const input = document.getElementById('barcodeInput');
+        input.focus();
 
-    document.addEventListener('click', () => { input.focus(); });
-    window.addEventListener('load', () => { input.focus(); loadCurrentState(); });
+        document.addEventListener('click', function(e) {
+            if (!e.target.closest('button') && !e.target.closest('input') && !e.target.closest('a') && !e.target.closest('.modal')) {
+                input.focus();
+            }
+        });
 
-    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    function playMp3(soundName) {
-        if (!soundName) return;
-        fetch(`/static/sounds/${soundName}.mp3`)
-            .then(res => res.arrayBuffer())
-            .then(data => audioCtx.decodeAudioData(data))
-            .then(buffer => {
-                const src = audioCtx.createBufferSource();
-                const gain = audioCtx.createGain();
-                gain.gain.value = 2.5;
-                src.buffer = buffer;
-                src.connect(gain);
-                gain.connect(audioCtx.destination);
-                src.start(0);
-            }).catch(e => console.log('Звук не найден'));
+        loadActiveShipmentMeta();
+    });
+
+    // F2 переключатель Брака
+    window.addEventListener('keydown', function(e) {
+        if (e.key === 'F2') {
+            e.preventDefault();
+            const sw = document.getElementById('defectSwitch');
+            sw.checked = !sw.checked;
+            toggleDefectMode(sw.checked);
+        }
+    });
+
+    function toggleDefectMode(active) {
+        isDefectMode = active;
+        const box = document.getElementById('scannerCardBox');
+        if (isDefectMode) {
+            box.classList.add('defect-active');
+        } else {
+            box.classList.remove('defect-active');
+        }
+        // Глушим любой голос при переключении
+        if (window.speechSynthesis) window.speechSynthesis.cancel();
+        document.getElementById('barcodeInput').focus();
     }
 
-    function speakText(phrase) {
-        if (!phrase) return;
+    // Синтезатор речи (только для обычного режима)
+    function speakText(text) {
+        if (!window.speechSynthesis || !text) return;
         window.speechSynthesis.cancel();
-        const utterance = new SpeechSynthesisUtterance(phrase);
+        const utterance = new SpeechSynthesisUtterance(text);
         utterance.lang = 'ru-RU';
-        utterance.rate = 1.35;
+        utterance.rate = 1.15;
         window.speechSynthesis.speak(utterance);
     }
 
-    async function loadCurrentState() {
-        try {
-            const res = await fetch('/api/shipments/current');
-            const data = await res.json();
-            if (data.has_active) {
-                document.getElementById('activeFileName').innerText = data.filename;
-                document.getElementById('totalItems').innerText = data.total_items;
-                document.getElementById('scannedItems').innerText = data.scanned_items;
-                document.getElementById('totalSeizures').innerText = data.total_seizures;
-                document.getElementById('scannedSeizures').innerText = data.scanned_seizures;
-
-                if (data.history) {
-                    const tbody = document.getElementById('historyBody');
-                    tbody.innerHTML = '';
-                    data.history.forEach(item => {
-                        const tr = document.createElement('tr');
-                        const statusRu = STATUS_MAP[item.status] || item.status;
-                        let badgeClass = 'bg-secondary';
-                        if (['ОТСКАНИРОВАН', 'КОРОБКА ПОЛНАЯ'].includes(statusRu)) badgeClass = 'bg-success';
-                        if (['ИЗЪЯТИЕ', 'НЕ ТОТ ШТРИХКОД', 'НЕТ В БАЗЕ', 'ПОВТОР ИЗЪЯТИЯ'].includes(statusRu)) badgeClass = 'bg-danger';
-                        if (statusRu === 'ПОВТОР') badgeClass = 'bg-warning text-dark';
-                        tr.innerHTML = `<td>${item.time}</td><td>${item.code}</td><td><span class="badge ${badgeClass}">${statusRu}</span></td><td>-</td>`;
-                        tbody.appendChild(tr);
-                    });
-                }
-            }
-        } catch(e) {}
+    function playAudio(soundName, soundPhrase) {
+        if (soundPhrase) {
+            speakText(soundPhrase);
+        }
+        if (soundName) {
+            const audio = new Audio('/static/sounds/' + soundName + '.mp3');
+            audio.play().catch(e => console.log('Аудио:', e));
+        }
     }
 
-    let isScanning = false;
-    async function handleScan(e) {
-        e.preventDefault();
-        if (isScanning) return;
+    // Обработка сканирования
+    async function handleScan(event) {
+        event.preventDefault();
+        const input = document.getElementById('barcodeInput');
         const code = input.value.trim();
+        input.value = '';
         if (!code) return;
 
-        isScanning = true;
-        input.value = '';
+        // Debounce 350 мс
+        const now = Date.now();
+        if (now - lastScanTime < 350) return;
+        lastScanTime = now;
+
+        const deskId = document.getElementById('deskIdInput').value || 'PC1';
 
         try {
             const res = await fetch('/api/scan', {
                 method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ code: code, desk_id: "PC1" })
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    code: code,
+                    desk_id: deskId,
+                    is_defect: isDefectMode
+                })
             });
+
             const data = await res.json();
+            renderScanResult(data, code);
+        } catch (err) {
+            console.error('Ошибка связи с сервером:', err);
+        }
+    }
 
-            banner.style.display = 'block';
-            banner.className = `banner-box bg-${data.banner_color} text-white`;
-            banner.innerText = data.banner_text;
+    function renderScanResult(data, scannedCode) {
+        // ЖЕЛЕЗНОЕ ПРАВИЛО: В РЕЖИМЕ БРАКА ТОЛЬКО ok.mp3, СИНТЕЗАТОР МОЛЧИТ!
+        if (isDefectMode) {
+            if (window.speechSynthesis) window.speechSynthesis.cancel();
+            const audio = new Audio('/static/sounds/ok.mp3');
+            audio.play().catch(e => console.log('Аудио:', e));
+        } else {
+            playAudio(data.sound, data.sound_phrase);
+        }
 
-            // СИНХРОНИЗАЦИЯ СЧЕТЧИКОВ СО ВСЕМИ ПК
+        // Обновление цифр
+        if (data.global_total_items !== undefined) {
             document.getElementById('totalItems').innerText = data.global_total_items;
             document.getElementById('scannedItems').innerText = data.global_scanned_items;
             document.getElementById('totalSeizures').innerText = data.global_total_seizures;
             document.getElementById('scannedSeizures').innerText = data.global_scanned_seizures;
+        }
 
-            // ЗВУК: Либо голос, либо MP3 (чтобы не было эха)
-            if (data.sound_phrase) {
-                speakText(data.sound_phrase);
-            } else if (data.sound) {
-                playMp3(data.sound);
-            }
+        // Большой баннер
+        const banner = document.getElementById('bannerBox');
+        banner.style.display = 'block';
+        banner.style.backgroundColor = data.banner_color || '#dc3545';
+        banner.style.color = (data.banner_color === '#ffc107') ? '#000' : '#fff';
+        banner.innerText = data.banner_text || 'ОТСКАНИРОВАНО';
 
-            addRowToHistory(code, data.status, data.item_title || '');
-        } catch(err) {} finally {
-            setTimeout(() => { isScanning = false; }, 250);
+        // Наименование товара
+        document.getElementById('itemTitleDisplay').innerText = data.item_title || '—';
+
+        // Добавление в таблицу
+        addScanRow({
+            time: new Date().toLocaleTimeString('ru-RU'),
+            code: scannedCode,
+            status: data.status,
+            color: data.banner_color,
+            box: data.box_number ? `№${data.box_number}` : '—'
+        });
+    }
+
+    function addScanRow(row) {
+        const tbody = document.getElementById('scanTableBody');
+        if (tbody.children.length === 1 && tbody.children[0].children.length === 1) {
+            tbody.innerHTML = '';
+        }
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td class="text-muted fw-bold">${row.time}</td>
+            <td class="fw-bold">${row.code}</td>
+            <td>
+                <span class="badge" style="background-color: ${row.color || '#6c757d'}; font-size: 0.9rem;">
+                    ${row.status}
+                </span>
+            </td>
+            <td class="fw-semibold">${row.box}</td>
+        `;
+        tbody.insertBefore(tr, tbody.firstChild);
+
+        if (tbody.children.length > 25) {
+            tbody.removeChild(tbody.lastChild);
         }
     }
 
-    function addRowToHistory(code, status, title) {
-        const tbody = document.getElementById('historyBody');
-        const tr = document.createElement('tr');
-        const now = new Date().toLocaleTimeString();
-        const statusRu = STATUS_MAP[status] || status;
-        let badgeClass = 'bg-secondary';
-        if (['ОТСКАНИРОВАН', 'КОРОБКА ПОЛНАЯ'].includes(statusRu)) badgeClass = 'bg-success';
-        if (['ИЗЪЯТИЕ', 'НЕ ТОТ ШТРИХКОД', 'НЕТ В БАЗЕ', 'ПОВТОР ИЗЪЯТИЯ'].includes(statusRu)) badgeClass = 'bg-danger';
-        if (statusRu === 'ПОВТОР') badgeClass = 'bg-warning text-dark';
-        tr.innerHTML = `<td>${now}</td><td>${code}</td><td><span class="badge ${badgeClass}">${statusRu}</span></td><td>${title}</td>`;
-        tbody.insertBefore(tr, tbody.firstChild);
-        if (tbody.children.length > 15) tbody.removeChild(tbody.lastChild);
+    function formatLocalDateTime(dateString) {
+        if (!dateString) return '';
+        const d = new Date(dateString.endsWith('Z') ? dateString : dateString + 'Z');
+        return d.toLocaleDateString('ru-RU') + ' ' + d.toLocaleTimeString('ru-RU', {hour: '2-digit', minute:'2-digit'});
     }
 
-    let isUploading = false;
-    async function uploadExcelFile(file) {
-        if (!file || isUploading) return;
-        isUploading = true;
-        document.getElementById('activeFileName').innerHTML = '<span class="text-warning">⏳ ОБРАБОТКА...</span>';
+    async function loadActiveShipmentMeta() {
+        try {
+            const res = await fetch('/api/shipments');
+            const data = await res.json();
+            if (data && data.length > 0) {
+                const latest = data[0];
+                document.getElementById('activeFileName').innerText = latest.filename;
+                document.getElementById('totalItems').innerText = latest.total_items;
+                document.getElementById('totalSeizures').innerText = latest.seizures_count;
+                document.getElementById('scannedItems').innerText = latest.scanned_count || 0;
+                document.getElementById('scannedSeizures').innerText = latest.scanned_seizures_count || 0;
+
+                if (latest.created_at) {
+                    document.getElementById('shipmentTimeDisplay').innerText = formatLocalDateTime(latest.created_at);
+                }
+            }
+        } catch (e) {
+            console.log('Поставки пока не загружены');
+        }
+    }
+
+    async function openHistoryModal() {
+        historyModalInstance.show();
+        const tbody = document.getElementById('historyTableBody');
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-muted">Загрузка данных...</td></tr>';
+
+        try {
+            const res = await fetch('/api/shipments');
+            const list = await res.json();
+            if (!list || list.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-muted">В базе нет загруженных поставок</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = '';
+            list.forEach(s => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td class="fw-bold">#${s.id}</td>
+                    <td><span class="fw-bold text-primary">${s.filename}</span></td>
+                    <td><small class="fw-semibold text-muted">${formatLocalDateTime(s.created_at)}</small></td>
+                    <td><span class="badge bg-secondary fs-6">${s.total_items} шт</span></td>
+                    <td><span class="badge bg-warning text-dark fs-6">${s.seizures_count}</span></td>
+                    <td><span class="badge bg-danger fs-6">${s.defect_count || 0}</span></td>
+                    <td class="text-end">
+                        <a href="/api/shipments/${s.id}/report" class="btn btn-sm btn-outline-success fw-bold">
+                            📥 Скачать Excel
+                        </a>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        } catch(e) {
+            tbody.innerHTML = '<tr><td colspan="7" class="text-center text-danger py-4">Ошибка загрузки списка поставок</td></tr>';
+        }
+    }
+
+    const fileInput = document.getElementById('excelFileInput');
+    fileInput.addEventListener('change', function() {
+        if (this.files && this.files[0]) uploadFile(this.files[0]);
+    });
+
+    const overlay = document.getElementById('dropOverlay');
+    window.addEventListener('dragover', (e) => { e.preventDefault(); overlay.style.display = 'flex'; });
+    overlay.addEventListener('dragleave', () => { overlay.style.display = 'none'; });
+    overlay.addEventListener('drop', (e) => {
+        e.preventDefault();
+        overlay.style.display = 'none';
+        if (e.dataTransfer.files && e.dataTransfer.files[0]) uploadFile(e.dataTransfer.files[0]);
+    });
+
+    async function uploadFile(file) {
         const formData = new FormData();
         formData.append('file', file);
-        try {
-            const res = await fetch('/api/shipments/upload', { method: 'POST', body: formData });
-            const data = await res.json();
-            if (data.status === 'success') {
-                await loadCurrentState();
-                alert('Файл загружен!');
-            }
-        } catch (err) { alert('Ошибка загрузки'); }
-        finally { isUploading = false; }
-    }
+        document.getElementById('activeFileName').innerText = 'Загрузка: ' + file.name + '...';
 
-    document.getElementById('excelFileInput').addEventListener('change', (e) => uploadExcelFile(e.target.files[0]));
-    window.addEventListener('dragover', (e) => { e.preventDefault(); overlay.style.display = 'flex'; });
-    overlay.addEventListener('dragleave', (e) => { e.preventDefault(); overlay.style.display = 'none'; });
-    overlay.addEventListener('drop', (e) => { e.preventDefault(); overlay.style.display = 'none'; if (e.dataTransfer.files.length > 0) uploadExcelFile(e.dataTransfer.files[0]); });
+        try {
+            const res = await fetch('/api/shipments/upload', {
+                method: 'POST',
+                body: formData
+            });
+            const result = await res.json();
+            if (res.ok) {
+                document.getElementById('activeFileName').innerText = file.name;
+                document.getElementById('totalItems').innerText = result.total_items || 0;
+                document.getElementById('totalSeizures').innerText = result.total_seizures || 0;
+                document.getElementById('scannedItems').innerText = '0';
+                document.getElementById('scannedSeizures').innerText = '0';
+                document.getElementById('shipmentTimeDisplay').innerText = new Date().toLocaleDateString('ru-RU') + ' ' + new Date().toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'});
+                document.getElementById('scanTableBody').innerHTML = '<tr><td colspan="4" class="text-center text-muted py-4">Файл загружен. Начните сканирование.</td></tr>';
+            } else {
+                alert('Ошибка: ' + (result.detail || 'Не удалось загрузить файл'));
+            }
+        } catch (err) {
+            alert('Сбой связи с сервером при отправке файла');
+        }
+    }
 </script>
 </body>
 </html>
